@@ -1,4 +1,4 @@
-from blackjack_buisness.deck import Deck
+from game.deck import Deck
 
 
 class Multiple_deck(Deck):

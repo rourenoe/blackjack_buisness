@@ -2,8 +2,8 @@ import pygame
 import sys
 from pathlib import Path
 from typing import List, Tuple
-from blackjack_buisness.multiple_deck import Multiple_deck
-from blackjack_buisness.card import Card
+from game.multiple_deck import Multiple_deck
+from game.card import Card
 
 # Initialize Pygame
 pygame.init()
@@ -58,7 +58,7 @@ class BlackjackGame:
         self.start_new_game()
 
     def start_new_game(self) -> None:
-        self.deck = Multiple_deck()
+        self.deck = Multiple_deck(num_decks=6)
         self.player_hand = []
         self.dealer_hand = []
         self.game_over = False
@@ -113,7 +113,7 @@ class BlackjackGame:
 
             # Get the current file's directory and construct the path to the image
             current_dir = Path(__file__).parent
-            image_path = current_dir / card.path_to_image
+            image_path = current_dir.parent.parent / card.path_to_image
             card_image = pygame.image.load(str(image_path))
             card_image = pygame.transform.scale(card_image, (CARD_WIDTH, CARD_HEIGHT))
             self.screen.blit(card_image, (x, y))

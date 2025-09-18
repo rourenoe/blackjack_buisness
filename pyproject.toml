@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "blackjack-game"
+version = "0.0.1"
+authors = [
+  { name="rourenoe" },
+]
+description = "A blackjack game implementation"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pygame",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/game"]

@@ -1,4 +1,4 @@
-from blackjack_buisness.card import Card
+from game.card import Card
 import random
 
 

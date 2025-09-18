@@ -27,16 +27,16 @@ git clone https://github.com/rourennoe/blackjack_buisness.git
 cd blackjack_buisness
 ```
 
-2. Install the required dependencies:
+2. Install the package in development mode:
 ```bash
-pip install pygame
+pip install -e .
 ```
 
 ## How to Play
 
 1. Run the game:
 ```bash
-python main.py
+python -m game.main
 ```
 
 2. Game Controls:
@@ -54,12 +54,16 @@ python main.py
 
 ```
 blackjack_buisness/
-├── main.py              # Main game loop and GUI
-├── card.py             # Card class implementation
-├── deck.py             # Single deck implementation
-├── multiple_deck.py    # Multiple deck handling
-└── images/
-    └── cards/          # Card image assets
+├── src/
+│   └── game/          # Main package directory
+│       ├── __init__.py
+│       ├── main.py              # Main game loop and GUI
+│       ├── card.py             # Card class implementation
+│       ├── deck.py             # Single deck implementation
+│       └── multiple_deck.py    # Multiple deck handling
+├── images/
+│   └── cards/          # Card image assets
+└── pyproject.toml      # Project configuration and dependencies
 ```
 
 ## Classes
