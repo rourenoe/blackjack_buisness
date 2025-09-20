@@ -50,6 +50,12 @@ class BlackjackGame:
         self.game_over = False
         self.player_stand = False
         
+        # Statistics
+        self.total_games = 0
+        self.wins = 0
+        self.losses = 0
+        self.pushes = 0
+        
         # Buttons
         self.hit_button = pygame.Rect(50, WINDOW_HEIGHT - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
         self.stand_button = pygame.Rect(300, WINDOW_HEIGHT - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
@@ -97,15 +103,22 @@ class BlackjackGame:
         player_score = self.calculate_score(self.player_hand)
         dealer_score = self.calculate_score(self.dealer_hand)
         
+        self.total_games += 1
+        
         if player_score > 21:
+            self.losses += 1
             return "Dealer wins! Player busted!"
         elif dealer_score > 21:
+            self.wins += 1
             return "Player wins! Dealer busted!"
         elif player_score > dealer_score:
+            self.wins += 1
             return "Player wins!"
         elif dealer_score > player_score:
+            self.losses += 1
             return "Dealer wins!"
         else:
+            self.pushes += 1
             return "Push! It's a tie!"
 
     def draw_card(self, card: Card, x: int, y: int) -> None:
@@ -177,6 +190,15 @@ class BlackjackGame:
             result_text = self.font.render(result, True, WHITE)
             result_rect = result_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
             self.screen.blit(result_text, result_rect)
+            self.game_over = False  
+        
+        # Draw statistics
+        winrate = (self.wins / self.total_games * 100) if self.total_games > 0 else 0
+        stats_text = self.font.render(
+            f"Games: {self.total_games} | Wins: {self.wins} | Losses: {self.losses} | Pushes: {self.pushes} | Winrate: {winrate:.1f}%",
+            True, WHITE
+        )
+        self.screen.blit(stats_text, (WINDOW_WIDTH // 2 - stats_text.get_width() // 2, 10))
 
     def run(self) -> None:
         running = True
