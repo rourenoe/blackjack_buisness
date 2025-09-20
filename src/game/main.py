@@ -69,12 +69,16 @@ class BlackjackGame:
         self.dealer_hand = []
         self.game_over = False
         self.player_stand = False
-        
+
         # Initial deal
-        self.player_hand.append(self.deck.deal_card())
+        """self.player_hand.append(self.deck.deal_card())
         self.dealer_hand.append(self.deck.deal_card())
         self.player_hand.append(self.deck.deal_card())
-        self.dealer_hand.append(self.deck.deal_card())
+        self.dealer_hand.append(self.deck.deal_card())"""
+        
+        self.dealer_hand.extend(self.deck.draw_until_exact(4))
+        self.player_hand.extend(self.deck.draw_until_exact(12))
+
 
     def calculate_score(self, hand: List[Card]) -> int:
         score = 0
@@ -191,6 +195,8 @@ class BlackjackGame:
             result_rect = result_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
             self.screen.blit(result_text, result_rect)
             self.game_over = False  
+            self.start_new_game()
+            
         
         # Draw statistics
         winrate = (self.wins / self.total_games * 100) if self.total_games > 0 else 0
@@ -210,7 +216,7 @@ class BlackjackGame:
                     mouse_pos = event.pos
                     
                     if not self.game_over and not self.player_stand:
-                        if self.hit_button.collidepoint(mouse_pos):
+                        if self.hit_button.collidepoint(mouse_pos) :
                             self.player_hand.append(self.deck.deal_card())
                             if self.calculate_score(self.player_hand) > 21:
                                 self.game_over = True
@@ -223,6 +229,18 @@ class BlackjackGame:
                             
                     if self.new_game_button.collidepoint(mouse_pos):
                         self.start_new_game()
+            
+            # Comportement automatique : tirer si score < 16
+            if not self.game_over and not self.player_stand:
+                if self.calculate_score(self.player_hand) < 17:
+                    self.player_hand.append(self.deck.deal_card())
+                    if self.calculate_score(self.player_hand) > 21:
+                        self.game_over = True
+                        self.player_stand = True
+                else:
+                    self.player_stand = True
+                    self.dealer_play()
+                    self.game_over = True
             
             self.draw()
             pygame.display.flip()
