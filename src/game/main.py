@@ -4,10 +4,11 @@ from pathlib import Path
 from typing import List, Tuple
 from game.multiple_deck import Multiple_deck
 from game.card import Card
-
+import torch
 # Initialize Pygame
 pygame.init()
-
+#set torch to cpu 
+device = torch.device("cpu")
 # Constants
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 800
@@ -15,7 +16,7 @@ CARD_WIDTH = 100
 CARD_HEIGHT = 145
 BUTTON_WIDTH = 200
 BUTTON_HEIGHT = 50
-FPS = 60
+FPS = 300
 
 # Colors
 BLACK = (0, 0, 0)
