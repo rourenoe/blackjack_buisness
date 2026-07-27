@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import sqlite3
 import time
+import hashlib
+import hmac
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
@@ -71,9 +73,14 @@ class StartResponse(BaseModel):
     scenario: Optional[dict]
 
 
+class StartRequest(BaseModel):
+    pin: str = Field(min_length=4, max_length=4)
+
+
 class AnswerRequest(BaseModel):
     scenario_key: str = Field(min_length=1, max_length=32)
     action: str = Field(min_length=1, max_length=16)
+    pin: str = Field(min_length=4, max_length=4)
 
 
 class AnswerResponse(BaseModel):
@@ -94,6 +101,21 @@ class ProgressResponse(BaseModel):
     remaining_errors: int
 
 
+class ProgressRequest(BaseModel):
+    pin: str = Field(min_length=4, max_length=4)
+
+
+class LeaderboardEntry(BaseModel):
+    username: str
+    total_attempts: int
+    correct_attempts: int
+    accuracy_percent: int
+
+
+class LeaderboardResponse(BaseModel):
+    entries: List[LeaderboardEntry]
+
+
 def normalize_username(raw_username: str) -> str:
     normalized = "".join(
         ch if ch.isalnum() or ch in ("_", "-") else "_" for ch in raw_username.strip()
@@ -103,6 +125,24 @@ def normalize_username(raw_username: str) -> str:
     if len(normalized) > 32:
         raise HTTPException(status_code=400, detail="Username too long")
     return normalized
+
+
+def validate_pin(pin: str) -> str:
+    if len(pin) != 4 or not pin.isdigit():
+        raise HTTPException(status_code=400, detail="PIN must be exactly 4 digits")
+    return pin
+
+
+def hash_pin(pin: str, salt: bytes) -> str:
+    digest = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt, 200_000)
+    return digest.hex()
+
+
+def verify_pin(pin: str, salt_hex: str, pin_hash_hex: str) -> bool:
+    salt = bytes.fromhex(salt_hex)
+    expected = bytes.fromhex(pin_hash_hex)
+    actual = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt, 200_000)
+    return hmac.compare_digest(expected, actual)
 
 
 def format_hand_score(ranks: tuple[str, ...]) -> str:
@@ -216,6 +256,8 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS user_state (
                 username TEXT PRIMARY KEY,
+                pin_salt TEXT NOT NULL,
+                pin_hash TEXT NOT NULL,
                 current_index INTEGER NOT NULL DEFAULT 0,
                 total_attempts INTEGER NOT NULL DEFAULT 0,
                 correct_attempts INTEGER NOT NULL DEFAULT 0,
@@ -223,6 +265,18 @@ def init_db() -> None:
             )
             """
         )
+        existing_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(user_state)").fetchall()
+        }
+        if "pin_salt" not in existing_columns:
+            connection.execute(
+                "ALTER TABLE user_state ADD COLUMN pin_salt TEXT NOT NULL DEFAULT ''"
+            )
+        if "pin_hash" not in existing_columns:
+            connection.execute(
+                "ALTER TABLE user_state ADD COLUMN pin_hash TEXT NOT NULL DEFAULT ''"
+            )
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS user_errors (
@@ -269,21 +323,49 @@ def enforce_rate_limit(request: Request) -> None:
         bucket.append(now)
 
 
-def get_or_create_state(connection: sqlite3.Connection, username: str) -> sqlite3.Row:
+def get_or_create_state(
+    connection: sqlite3.Connection, username: str, pin: str
+) -> sqlite3.Row:
     row = connection.execute(
-        "SELECT username, current_index, total_attempts, correct_attempts, incorrect_attempts "
+        "SELECT username, pin_salt, pin_hash, current_index, total_attempts, correct_attempts, incorrect_attempts "
         "FROM user_state WHERE username = ?",
         (username,),
     ).fetchone()
     if row:
+        if not row["pin_salt"] or not row["pin_hash"]:
+            salt = os.urandom(16)
+            connection.execute(
+                "UPDATE user_state SET pin_salt = ?, pin_hash = ? WHERE username = ?",
+                (salt.hex(), hash_pin(pin, salt), username),
+            )
+            row = connection.execute(
+                "SELECT username, pin_salt, pin_hash, current_index, total_attempts, correct_attempts, incorrect_attempts "
+                "FROM user_state WHERE username = ?",
+                (username,),
+            ).fetchone()
+            return row
+        if not verify_pin(pin, str(row["pin_salt"]), str(row["pin_hash"])):
+            raise HTTPException(status_code=401, detail="Invalid username or PIN")
         return row
-    connection.execute(
-        "INSERT INTO user_state (username, current_index, total_attempts, correct_attempts, incorrect_attempts) "
-        "VALUES (?, 0, 0, 0, 0)",
-        (username,),
-    )
+
+    salt = os.urandom(16)
+    try:
+        connection.execute(
+            "INSERT INTO user_state (username, pin_salt, pin_hash, current_index, total_attempts, correct_attempts, incorrect_attempts) "
+            "VALUES (?, ?, ?, 0, 0, 0, 0)",
+            (username, salt.hex(), hash_pin(pin, salt)),
+        )
+    except sqlite3.IntegrityError:
+        row = connection.execute(
+            "SELECT username, pin_salt, pin_hash, current_index, total_attempts, correct_attempts, incorrect_attempts "
+            "FROM user_state WHERE username = ?",
+            (username,),
+        ).fetchone()
+        if row is None or not verify_pin(pin, str(row["pin_salt"]), str(row["pin_hash"])):
+            raise HTTPException(status_code=401, detail="Invalid username or PIN")
+        return row
     return connection.execute(
-        "SELECT username, current_index, total_attempts, correct_attempts, incorrect_attempts "
+        "SELECT username, pin_salt, pin_hash, current_index, total_attempts, correct_attempts, incorrect_attempts "
         "FROM user_state WHERE username = ?",
         (username,),
     ).fetchone()
@@ -340,10 +422,11 @@ def health() -> dict:
 
 
 @app.post("/api/users/{username}/start", response_model=StartResponse)
-def start_user(username: str) -> StartResponse:
+def start_user(username: str, payload: StartRequest) -> StartResponse:
     normalized = normalize_username(username)
+    pin = validate_pin(payload.pin)
     with open_db() as connection:
-        state = get_or_create_state(connection, normalized)
+        state = get_or_create_state(connection, normalized, pin)
         scenario = get_current_scenario(int(state["current_index"]))
         return StartResponse(
             username=normalized,
@@ -353,11 +436,12 @@ def start_user(username: str) -> StartResponse:
         )
 
 
-@app.get("/api/users/{username}/progress", response_model=ProgressResponse)
-def get_progress(username: str) -> ProgressResponse:
+@app.post("/api/users/{username}/progress", response_model=ProgressResponse)
+def get_progress(username: str, payload: ProgressRequest) -> ProgressResponse:
     normalized = normalize_username(username)
+    pin = validate_pin(payload.pin)
     with open_db() as connection:
-        state = get_or_create_state(connection, normalized)
+        state = get_or_create_state(connection, normalized, pin)
         return ProgressResponse(
             username=normalized,
             total_attempts=int(state["total_attempts"]),
@@ -370,6 +454,7 @@ def get_progress(username: str) -> ProgressResponse:
 @app.post("/api/users/{username}/answer", response_model=AnswerResponse)
 def submit_answer(username: str, payload: AnswerRequest) -> AnswerResponse:
     normalized = normalize_username(username)
+    pin = validate_pin(payload.pin)
     action = payload.action.lower().strip()
     if action not in ALLOWED_ACTIONS:
         raise HTTPException(status_code=400, detail="Invalid action")
@@ -382,7 +467,7 @@ def submit_answer(username: str, payload: AnswerRequest) -> AnswerResponse:
 
     is_correct = action == scenario.best_action
     with open_db() as connection:
-        state = get_or_create_state(connection, normalized)
+        state = get_or_create_state(connection, normalized, pin)
         total_attempts = int(state["total_attempts"]) + 1
         correct_attempts = int(state["correct_attempts"]) + (1 if is_correct else 0)
         incorrect_attempts = int(state["incorrect_attempts"]) + (0 if is_correct else 1)
@@ -430,6 +515,37 @@ def submit_answer(username: str, payload: AnswerRequest) -> AnswerResponse:
         remaining_errors=remaining_errors,
         next_scenario=next_scenario.to_public(),
     )
+
+
+@app.get("/api/leaderboard", response_model=LeaderboardResponse)
+def get_leaderboard() -> LeaderboardResponse:
+    with open_db() as connection:
+        rows = connection.execute(
+            """
+            SELECT username, total_attempts, correct_attempts
+            FROM user_state
+            WHERE total_attempts > 0
+            ORDER BY (CAST(correct_attempts AS REAL) / total_attempts) DESC,
+                     total_attempts DESC,
+                     username ASC
+            LIMIT 20
+            """
+        ).fetchall()
+
+    entries: List[LeaderboardEntry] = []
+    for row in rows:
+        total = int(row["total_attempts"])
+        correct = int(row["correct_attempts"])
+        accuracy = int(round((correct * 100) / total)) if total > 0 else 0
+        entries.append(
+            LeaderboardEntry(
+                username=str(row["username"]),
+                total_attempts=total,
+                correct_attempts=correct,
+                accuracy_percent=accuracy,
+            )
+        )
+    return LeaderboardResponse(entries=entries)
 
 
 def main() -> None:

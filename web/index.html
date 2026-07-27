@@ -14,6 +14,7 @@
       <h2>User</h2>
       <div class="row">
         <input id="username" type="text" maxlength="32" placeholder="Your username">
+        <input id="pin" type="password" maxlength="4" inputmode="numeric" placeholder="PIN 4 digits">
         <button id="startBtn" type="button">Start / Resume</button>
       </div>
       <p id="userStatus" class="muted"></p>
@@ -35,6 +36,14 @@
     <section class="panel" id="progressPanel" hidden>
       <h2>Progress</h2>
       <p id="progressText"></p>
+    </section>
+
+    <section class="panel" id="leaderboardPanel">
+      <div class="row space-between">
+        <h2>Leaderboard</h2>
+        <button id="refreshLeaderboardBtn" type="button">Refresh</button>
+      </div>
+      <ul id="leaderboardList"></ul>
     </section>
   </main>
 

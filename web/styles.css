@@ -32,6 +32,11 @@ h1 {
   gap: 8px;
 }
 
+.space-between {
+  justify-content: space-between;
+  align-items: center;
+}
+
 input {
   flex: 1;
   padding: 10px;
@@ -39,6 +44,10 @@ input {
   border: 1px solid #405b84;
   background: #0f1c30;
   color: #e9eef6;
+}
+
+#pin {
+  max-width: 150px;
 }
 
 button {
@@ -72,4 +81,9 @@ button[disabled] {
 
 .ko {
   color: #ff8b8b;
+}
+
+#leaderboardList {
+  margin: 8px 0 0;
+  padding-left: 20px;
 }

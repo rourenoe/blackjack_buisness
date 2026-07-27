@@ -79,6 +79,10 @@ $env:PYTHONPATH='src'; python -m game.web_api
 
 Then open `http://127.0.0.1:8000`.
 
+User accounts, progress, errors, and attempts are stored server-side in `blackjack_training.db`.
+Each user logs in with `username + 4-digit PIN` (PIN is hashed before storage).
+Leaderboard is available from the web UI and via `GET /api/leaderboard`.
+
 ### Security notes for web deployment
 
 - The web app is server-side only (no access to your local PC files from clients).

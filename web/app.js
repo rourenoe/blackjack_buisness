@@ -1,7 +1,9 @@
 let currentUser = null;
 let currentScenario = null;
+let currentPin = null;
 
 const usernameInput = document.getElementById("username");
+const pinInput = document.getElementById("pin");
 const startBtn = document.getElementById("startBtn");
 const userStatus = document.getElementById("userStatus");
 const scenarioPanel = document.getElementById("scenarioPanel");
@@ -10,6 +12,8 @@ const scoreText = document.getElementById("scoreText");
 const feedback = document.getElementById("feedback");
 const progressPanel = document.getElementById("progressPanel");
 const progressText = document.getElementById("progressText");
+const refreshLeaderboardBtn = document.getElementById("refreshLeaderboardBtn");
+const leaderboardList = document.getElementById("leaderboardList");
 
 function setMessage(el, message, cssClass) {
   el.textContent = message;
@@ -37,7 +41,11 @@ function renderProgress(data) {
 }
 
 async function fetchProgress() {
-  const res = await fetch(`/api/users/${encodeURIComponent(currentUser)}/progress`);
+  const res = await fetch(`/api/users/${encodeURIComponent(currentUser)}/progress`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pin: currentPin }),
+  });
   if (!res.ok) {
     throw new Error("Failed to load progress");
   }
@@ -45,10 +53,39 @@ async function fetchProgress() {
   renderProgress(data);
 }
 
+function renderLeaderboard(entries) {
+  leaderboardList.innerHTML = "";
+  if (!entries.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "No scores yet.";
+    leaderboardList.appendChild(empty);
+    return;
+  }
+  entries.forEach((entry, index) => {
+    const item = document.createElement("li");
+    item.textContent = `#${index + 1} ${entry.username} - ${entry.accuracy_percent}% (${entry.correct_attempts}/${entry.total_attempts})`;
+    leaderboardList.appendChild(item);
+  });
+}
+
+async function fetchLeaderboard() {
+  const res = await fetch("/api/leaderboard");
+  if (!res.ok) {
+    throw new Error("Failed to load leaderboard");
+  }
+  const data = await res.json();
+  renderLeaderboard(data.entries || []);
+}
+
 startBtn.addEventListener("click", async () => {
   const username = usernameInput.value.trim();
+  const pin = pinInput.value.trim();
   if (!username) {
     setMessage(userStatus, "Enter a username first.", "ko");
+    return;
+  }
+  if (!/^\d{4}$/.test(pin)) {
+    setMessage(userStatus, "PIN must be exactly 4 digits.", "ko");
     return;
   }
   setMessage(userStatus, "Loading user session...");
@@ -56,6 +93,8 @@ startBtn.addEventListener("click", async () => {
 
   const res = await fetch(`/api/users/${encodeURIComponent(username)}/start`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pin: pin }),
   });
   if (!res.ok) {
     const body = await res.json();
@@ -65,10 +104,12 @@ startBtn.addEventListener("click", async () => {
 
   const data = await res.json();
   currentUser = data.username;
+  currentPin = pin;
   usernameInput.value = data.username;
   setMessage(userStatus, `User ready: ${data.username}`, "ok");
   renderScenario(data.scenario);
   await fetchProgress();
+  await fetchLeaderboard();
 });
 
 document.querySelectorAll("[data-action]").forEach((btn) => {
@@ -85,6 +126,7 @@ document.querySelectorAll("[data-action]").forEach((btn) => {
       body: JSON.stringify({
         scenario_key: currentScenario.key,
         action: action,
+        pin: currentPin,
       }),
     });
 
@@ -103,5 +145,17 @@ document.querySelectorAll("[data-action]").forEach((btn) => {
 
     renderScenario(data.next_scenario);
     renderProgress(data);
+    await fetchLeaderboard();
   });
+});
+
+refreshLeaderboardBtn.addEventListener("click", async () => {
+  try {
+    await fetchLeaderboard();
+  } catch (_) {
+  }
+});
+
+fetchLeaderboard().catch(() => {
+  renderLeaderboard([]);
 });
