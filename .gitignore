@@ -1,1 +1,8 @@
 __pycache__/
+*.pyc
+.env
+.env.*
+save/
+training_history.txt
+training_errors.txt
+blackjack_training.db
