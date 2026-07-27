@@ -39,12 +39,60 @@ pip install -e .
 python -m game.main
 ```
 
-2. Game Controls:
+2. Generate the strategy probability table:
+```bash
+# macOS/Linux
+PYTHONPATH=src python -m game.generate_strategy_table
+
+# Windows PowerShell
+$env:PYTHONPATH='src'; python -m game.generate_strategy_table
+```
+
+Make sure you run this command from the repository root where the `src` directory exists.
+
+This command writes `strategy_table.html` at the repository root.
+
+3. Run the desktop training drill:
+
+The training GUI requires `pygame` to be installed.
+
+```bash
+# macOS/Linux
+PYTHONPATH=src python -m game.train_gui
+
+# Windows PowerShell
+$env:PYTHONPATH='src'; python -m game.train_gui
+```
+
+When the GUI starts, choose or create a user. Each user has a folder under `save/<username>` where their `training_history.txt` and `training_errors.txt` are stored.
+
+This starts an interactive training GUI that shows a situation, validates your choice, and records results in `training_history.txt` and `training_errors.txt`.
+
+4. Run the web training site:
+```bash
+# macOS/Linux
+PYTHONPATH=src python -m game.web_api
+
+# Windows PowerShell
+$env:PYTHONPATH='src'; python -m game.web_api
+```
+
+Then open `http://127.0.0.1:8000`.
+
+### Security notes for web deployment
+
+- The web app is server-side only (no access to your local PC files from clients).
+- User inputs are sanitized and validated.
+- API endpoints are rate-limited.
+- Strict security headers are set (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy).
+- Do **not** commit local session files (`save/`, `training_history.txt`, `training_errors.txt`) or `.env` files.
+
+5. Game Controls:
    - Click "Hit" to draw another card
    - Click "Stand" to keep your current hand
    - Click "New Game" to start a fresh game
 
-3. Game Rules:
+6. Game Rules:
    - Try to get as close to 21 as possible without going over
    - Face cards (J, Q, K) are worth 10
    - Aces are worth 11 or 1, whichever benefits you more

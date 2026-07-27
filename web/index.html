@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blackjack Trainer</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Blackjack Trainer</h1>
+
+    <section class="panel">
+      <h2>User</h2>
+      <div class="row">
+        <input id="username" type="text" maxlength="32" placeholder="Your username">
+        <button id="startBtn" type="button">Start / Resume</button>
+      </div>
+      <p id="userStatus" class="muted"></p>
+    </section>
+
+    <section class="panel" id="scenarioPanel" hidden>
+      <h2>Scenario</h2>
+      <p id="scenarioText"></p>
+      <p id="scoreText" class="muted"></p>
+      <div class="actions">
+        <button data-action="stand" type="button">Stand</button>
+        <button data-action="hit" type="button">Hit</button>
+        <button data-action="double" type="button">Double</button>
+        <button data-action="split" type="button">Split</button>
+      </div>
+      <p id="feedback"></p>
+    </section>
+
+    <section class="panel" id="progressPanel" hidden>
+      <h2>Progress</h2>
+      <p id="progressText"></p>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
