@@ -72,6 +72,9 @@ class DBConnection:
         if IS_POSTGRES:
             # PostgreSQL uses %s instead of standard SQLite ? placeholders
             query = query.replace("?", "%s")
+            # PostgreSQL does not support SQLite specific INSERT OR IGNORE, translate it on-the-fly
+            if "INSERT OR IGNORE INTO user_errors" in query:
+                query = "INSERT INTO user_errors (username, scenario_key) VALUES (%s, %s) ON CONFLICT (username, scenario_key) DO NOTHING"
         self.cursor.execute(query, params)
         return self
 
