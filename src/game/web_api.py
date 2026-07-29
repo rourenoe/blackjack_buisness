@@ -122,6 +122,7 @@ class Scenario:
     dealer_rank: str
     best_action: str
     valid_actions: tuple[str, ...]
+    action_evs: Dict[str, float]
 
     def to_public(self) -> dict:
         return {
@@ -166,6 +167,7 @@ class AnswerResponse(BaseModel):
     attempted_keys: List[str]
     review_mode: bool = Field(default=False)
     errors_cleared: bool = Field(default=False)
+    is_near_optimal: bool = Field(default=False)
 
 
 class ProgressResponse(BaseModel):
@@ -215,7 +217,7 @@ def build_scenarios() -> Dict[str, Scenario]:
         can_split: bool,
         pair_rank: Optional[str],
     ) -> None:
-        best_action, _, _ = evaluate_state(
+        best_action, best_res, action_results = evaluate_state(
             player_total=player_total,
             usable_ace=usable_ace,
             num_cards=2,
@@ -227,6 +229,10 @@ def build_scenarios() -> Dict[str, Scenario]:
         valid_actions = ["stand", "hit", "double"]
         if can_split:
             valid_actions.append("split")
+            
+        # Collect EVs of all valid actions to support sub-optimal Move Tolerances
+        action_evs = {act: float(action_results[act].ev) for act in valid_actions if act in action_results}
+        
         key = f"{player_ranks[0]}-{player_ranks[1]}|{dealer_rank}"
         scenarios[key] = Scenario(
             key=key,
@@ -236,6 +242,7 @@ def build_scenarios() -> Dict[str, Scenario]:
             dealer_rank=dealer_rank,
             best_action=best_action,
             valid_actions=tuple(valid_actions),
+            action_evs=action_evs,
         )
 
     for total, player_ranks in HARD_HANDS.items():
@@ -678,7 +685,19 @@ def submit_answer(username: str, payload: AnswerRequest) -> AnswerResponse:
     if action not in scenario.valid_actions:
         raise HTTPException(status_code=400, detail="Action not valid for this scenario")
 
-    is_correct = action == scenario.best_action
+    best_action = scenario.best_action
+    best_ev = scenario.action_evs.get(best_action, 0.0)
+    chosen_ev = scenario.action_evs.get(action, -999.0)
+    
+    is_optimal = action == best_action
+    is_near_optimal = False
+    
+    # Check if the chosen action has a very small EV difference (<= 0.025 EV) from optimal
+    if not is_optimal:
+        if best_ev - chosen_ev <= 0.025:
+            is_near_optimal = True
+            
+    is_correct = is_optimal or is_near_optimal
     with open_db() as connection:
         state = get_or_create_state(connection, normalized)
         
@@ -796,6 +815,7 @@ def submit_answer(username: str, payload: AnswerRequest) -> AnswerResponse:
         attempted_keys=attempted_keys,
         review_mode=payload.review_mode,
         errors_cleared=errors_cleared,
+        is_near_optimal=is_near_optimal,
     )
 
 

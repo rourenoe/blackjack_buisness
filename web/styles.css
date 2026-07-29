@@ -1448,3 +1448,53 @@ input:focus {
   box-shadow: none !important;
   cursor: not-allowed;
 }
+
+/* Quick visual feedback animations for player decisions */
+@keyframes correctBounce {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  40% {
+    transform: translateY(-10px) scale(1.03);
+    filter: drop-shadow(0 0 15px rgba(46, 213, 115, 0.7));
+  }
+  70% {
+    transform: translateY(2px) scale(0.98);
+  }
+}
+
+@keyframes incorrectShake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  20%, 60% {
+    transform: translateX(-6px);
+    filter: drop-shadow(0 0 15px rgba(255, 71, 87, 0.7));
+  }
+  40%, 80% {
+    transform: translateX(6px);
+    filter: drop-shadow(0 0 15px rgba(255, 71, 87, 0.7));
+  }
+}
+
+.correct-bounce {
+  animation: correctBounce 0.35s ease-out !important;
+}
+
+.incorrect-shake {
+  animation: incorrectShake 0.35s ease-out !important;
+}
+
+/* Near Optimal Move warnings badge styling */
+.warning-badge {
+  display: inline-block;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  color: #f59e0b;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 8px 12px;
+  margin-top: 8px;
+  animation: correctBounce 0.4s ease-out;
+}

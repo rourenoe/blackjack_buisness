@@ -26,7 +26,7 @@ const progressText = document.getElementById("progressText");
 
 function setMessage(el, message, cssClass) {
   el.textContent = message;
-  el.classList.remove("ok", "ko");
+  el.classList.remove("ok", "ko", "warning-badge");
   if (cssClass) {
     el.classList.add(cssClass);
   }
@@ -570,9 +570,30 @@ document.querySelectorAll("[data-action]").forEach((btn) => {
       }
 
       const data = await res.json();
+      
+      // Get the blackjack table element for quick visual animations
+      const blackjackTable = document.querySelector(".blackjack-table");
+      if (blackjackTable) {
+        blackjackTable.classList.remove("correct-bounce", "incorrect-shake");
+        void blackjackTable.offsetWidth; // Force CSS reflow to restart keyframe animation
+      }
+
       if (data.correct) {
-        setMessage(feedback, "🎉 Correct strategy decision!", "ok");
+        if (blackjackTable) {
+          blackjackTable.classList.add("correct-bounce");
+        }
+        
+        // Handle Near-Optimal Moves warning display with a styled caution badge
+        if (data.is_near_optimal) {
+          setMessage(feedback, `⚠️ Good decision! EV loss is very small (<= 0.025). But optimal was: ${data.correct_action.toUpperCase()}`, "ok");
+          feedback.classList.add("warning-badge");
+        } else {
+          setMessage(feedback, "🎉 Correct strategy decision!", "ok");
+        }
       } else {
+        if (blackjackTable) {
+          blackjackTable.classList.add("incorrect-shake");
+        }
         setMessage(feedback, `❌ Wrong. Best action: ${data.correct_action.toUpperCase()}`, "ko");
       }
 
