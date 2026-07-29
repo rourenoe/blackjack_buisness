@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -22,6 +22,72 @@ APP_ROOT = Path(__file__).resolve().parents[2]
 WEB_DIR = APP_ROOT / "web"
 DB_PATH = APP_ROOT / "blackjack_training.db"
 REQUESTS_PER_MINUTE = 120
+
+# Cloud PostgreSQL (Supabase / Neon.tech) vs local SQLite auto-routing
+DATABASE_URL = os.getenv("DATABASE_URL")
+IS_POSTGRES = DATABASE_URL is not None and (DATABASE_URL.startswith("postgres://") or DATABASE_URL.startswith("postgresql://"))
+
+if IS_POSTGRES:
+    import psycopg2
+    import psycopg2.extras
+    # Ensure correct dialect prefix for PostgreSQL compatibility
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+
+class DBConnection:
+    """
+    Highly robust, fully transparent drop-in database adapter wrapping SQLite
+    and PostgreSQL. Dynamically translates query parameter bindings, handles transactions,
+    and formats rows as standard dictionary records.
+    """
+    def __init__(self) -> None:
+        self.conn = None
+        self.cursor = None
+
+    def __enter__(self) -> DBConnection:
+        if IS_POSTGRES:
+            self.conn = psycopg2.connect(DATABASE_URL)
+            self.cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        else:
+            self.conn = sqlite3.connect(DB_PATH)
+            self.conn.row_factory = sqlite3.Row
+            self.cursor = self.conn.cursor()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        if exc_type is not None:
+            if self.conn:
+                self.conn.rollback()
+        else:
+            if self.conn:
+                self.conn.commit()
+        
+        if self.cursor:
+            self.cursor.close()
+        if self.conn:
+            self.conn.close()
+
+    def execute(self, query: str, params: tuple = ()) -> DBConnection:
+        if IS_POSTGRES:
+            # PostgreSQL uses %s instead of standard SQLite ? placeholders
+            query = query.replace("?", "%s")
+        self.cursor.execute(query, params)
+        return self
+
+    def fetchone(self) -> Optional[dict]:
+        row = self.cursor.fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def fetchall(self) -> List[dict]:
+        rows = self.cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+def open_db() -> DBConnection:
+    return DBConnection()
 
 HARD_HANDS = {
     5: ("2", "3"),
@@ -219,57 +285,90 @@ RATE_LIMIT_BUCKETS: Dict[str, List[float]] = {}
 RATE_LIMIT_LOCK = Lock()
 
 
-def open_db() -> sqlite3.Connection:
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    return connection
-
-
 def init_db() -> None:
     with open_db() as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_state (
-                username TEXT PRIMARY KEY,
-                current_index INTEGER NOT NULL DEFAULT 0,
-                total_attempts INTEGER NOT NULL DEFAULT 0,
-                correct_attempts INTEGER NOT NULL DEFAULT 0,
-                incorrect_attempts INTEGER NOT NULL DEFAULT 0
+        if IS_POSTGRES:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_state (
+                    username TEXT PRIMARY KEY,
+                    current_index INTEGER NOT NULL DEFAULT 0,
+                    total_attempts INTEGER NOT NULL DEFAULT 0,
+                    correct_attempts INTEGER NOT NULL DEFAULT 0,
+                    incorrect_attempts INTEGER NOT NULL DEFAULT 0,
+                    password_hash TEXT,
+                    password_salt TEXT,
+                    shuffle_seed INTEGER
+                )
+                """
             )
-            """
-        )
-        # Ensure password_hash and password_salt columns exist (for backward compatibility and smooth deployment on Render.com)
-        cursor = connection.execute("PRAGMA table_info(user_state)")
-        columns = [row["name"] for row in cursor.fetchall()]
-        if "password_hash" not in columns:
-            connection.execute("ALTER TABLE user_state ADD COLUMN password_hash TEXT")
-        if "password_salt" not in columns:
-            connection.execute("ALTER TABLE user_state ADD COLUMN password_salt TEXT")
-        if "shuffle_seed" not in columns:
-            connection.execute("ALTER TABLE user_state ADD COLUMN shuffle_seed INTEGER")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_errors (
+                    username TEXT NOT NULL,
+                    scenario_key TEXT NOT NULL,
+                    PRIMARY KEY (username, scenario_key)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_attempts (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    scenario_key TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    correct_action TEXT NOT NULL,
+                    is_correct INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL
+                )
+                """
+            )
+        else:
+            # Local SQLite schema with incremental migrations
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_state (
+                    username TEXT PRIMARY KEY,
+                    current_index INTEGER NOT NULL DEFAULT 0,
+                    total_attempts INTEGER NOT NULL DEFAULT 0,
+                    correct_attempts INTEGER NOT NULL DEFAULT 0,
+                    incorrect_attempts INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            # Ensure password_hash and password_salt columns exist (SQLite specific)
+            cursor = connection.execute("PRAGMA table_info(user_state)")
+            columns = [row["name"] for row in cursor.fetchall()]
+            if "password_hash" not in columns:
+                connection.execute("ALTER TABLE user_state ADD COLUMN password_hash TEXT")
+            if "password_salt" not in columns:
+                connection.execute("ALTER TABLE user_state ADD COLUMN password_salt TEXT")
+            if "shuffle_seed" not in columns:
+                connection.execute("ALTER TABLE user_state ADD COLUMN shuffle_seed INTEGER")
 
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_errors (
-                username TEXT NOT NULL,
-                scenario_key TEXT NOT NULL,
-                PRIMARY KEY (username, scenario_key)
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_errors (
+                    username TEXT NOT NULL,
+                    scenario_key TEXT NOT NULL,
+                    PRIMARY KEY (username, scenario_key)
+                )
+                """
             )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_attempts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT NOT NULL,
-                scenario_key TEXT NOT NULL,
-                action TEXT NOT NULL,
-                correct_action TEXT NOT NULL,
-                is_correct INTEGER NOT NULL,
-                created_at INTEGER NOT NULL
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL,
+                    scenario_key TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    correct_action TEXT NOT NULL,
+                    is_correct INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL
+                )
+                """
             )
-            """
-        )
 
 
 def enforce_rate_limit(request: Request) -> None:
@@ -305,7 +404,7 @@ def get_user_current_scenario(current_index: int, seed: int) -> Scenario:
     return SCENARIOS[user_order[current_index % len(user_order)]]
 
 
-def get_or_create_state(connection: sqlite3.Connection, username: str) -> sqlite3.Row:
+def get_or_create_state(connection: Any, username: str) -> dict:
     row = connection.execute(
         "SELECT username, current_index, total_attempts, correct_attempts, incorrect_attempts, shuffle_seed "
         "FROM user_state WHERE username = ?",
@@ -325,7 +424,7 @@ def get_or_create_state(connection: sqlite3.Connection, username: str) -> sqlite
                 "FROM user_state WHERE username = ?",
                 (username,),
             ).fetchone()
-        return row
+        return dict(row)
 
     seed = random.randint(1, 1000000)
     connection.execute(
@@ -333,18 +432,18 @@ def get_or_create_state(connection: sqlite3.Connection, username: str) -> sqlite
         "VALUES (?, 0, 0, 0, 0, ?)",
         (username, seed),
     )
-    return connection.execute(
+    return dict(connection.execute(
         "SELECT username, current_index, total_attempts, correct_attempts, incorrect_attempts, shuffle_seed "
         "FROM user_state WHERE username = ?",
         (username,),
-    ).fetchone()
+    ).fetchone())
 
 
 def get_current_scenario(current_index: int) -> Scenario:
     return SCENARIOS[SCENARIO_ORDER[current_index % len(SCENARIO_ORDER)]]
 
 
-def count_errors(connection: sqlite3.Connection, username: str) -> int:
+def count_errors(connection: Any, username: str) -> int:
     row = connection.execute(
         "SELECT COUNT(*) AS total FROM user_errors WHERE username = ?", (username,)
     ).fetchone()
