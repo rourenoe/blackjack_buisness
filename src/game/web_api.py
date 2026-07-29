@@ -646,7 +646,7 @@ def get_error_scenario(username: str) -> Optional[dict]:
     normalized = normalize_username(username)
     with open_db() as connection:
         cursor = connection.execute(
-            "SELECT scenario_key FROM user_errors WHERE username = ? ORDER BY rowid ASC",
+            "SELECT scenario_key FROM user_errors WHERE username = ? ORDER BY scenario_key ASC",
             (normalized,)
         )
         row = cursor.fetchone()
@@ -751,7 +751,7 @@ def submit_answer(username: str, payload: AnswerRequest) -> AnswerResponse:
         if payload.review_mode:
             # Query remaining errors AFTER deleting/inserting for this question
             cursor = connection.execute(
-                "SELECT scenario_key FROM user_errors WHERE username = ? ORDER BY rowid ASC",
+                "SELECT scenario_key FROM user_errors WHERE username = ? ORDER BY scenario_key ASC",
                 (normalized,)
             )
             errors = [row["scenario_key"] for row in cursor.fetchall()]
