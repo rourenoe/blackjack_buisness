@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import random
 import secrets
 import sqlite3
 import time
@@ -81,6 +82,7 @@ class StartRequest(BaseModel):
 class AnswerRequest(BaseModel):
     scenario_key: str = Field(min_length=1, max_length=32)
     action: str = Field(min_length=1, max_length=16)
+    review_mode: bool = Field(default=False)
 
 
 class AnswerResponse(BaseModel):
@@ -91,6 +93,10 @@ class AnswerResponse(BaseModel):
     incorrect_attempts: int
     remaining_errors: int
     next_scenario: Optional[dict]
+    error_keys: List[str]
+    attempted_keys: List[str]
+    review_mode: bool = Field(default=False)
+    errors_cleared: bool = Field(default=False)
 
 
 class ProgressResponse(BaseModel):
@@ -100,6 +106,7 @@ class ProgressResponse(BaseModel):
     incorrect_attempts: int
     remaining_errors: int
     error_keys: List[str]
+    attempted_keys: List[str]
 
 
 def normalize_username(raw_username: str) -> str:
@@ -238,6 +245,8 @@ def init_db() -> None:
             connection.execute("ALTER TABLE user_state ADD COLUMN password_hash TEXT")
         if "password_salt" not in columns:
             connection.execute("ALTER TABLE user_state ADD COLUMN password_salt TEXT")
+        if "shuffle_seed" not in columns:
+            connection.execute("ALTER TABLE user_state ADD COLUMN shuffle_seed INTEGER")
 
         connection.execute(
             """
@@ -285,21 +294,47 @@ def enforce_rate_limit(request: Request) -> None:
         bucket.append(now)
 
 
+def get_user_scenario_order(seed: int) -> List[str]:
+    order = list(SCENARIO_ORDER)
+    random.Random(seed).shuffle(order)
+    return order
+
+
+def get_user_current_scenario(current_index: int, seed: int) -> Scenario:
+    user_order = get_user_scenario_order(seed)
+    return SCENARIOS[user_order[current_index % len(user_order)]]
+
+
 def get_or_create_state(connection: sqlite3.Connection, username: str) -> sqlite3.Row:
     row = connection.execute(
-        "SELECT username, current_index, total_attempts, correct_attempts, incorrect_attempts "
+        "SELECT username, current_index, total_attempts, correct_attempts, incorrect_attempts, shuffle_seed "
         "FROM user_state WHERE username = ?",
         (username,),
     ).fetchone()
+    
     if row:
+        # Generate a seed if it does not exist yet (legacy user)
+        if row["shuffle_seed"] is None:
+            seed = random.randint(1, 1000000)
+            connection.execute(
+                "UPDATE user_state SET shuffle_seed = ? WHERE username = ?",
+                (seed, username)
+            )
+            row = connection.execute(
+                "SELECT username, current_index, total_attempts, correct_attempts, incorrect_attempts, shuffle_seed "
+                "FROM user_state WHERE username = ?",
+                (username,),
+            ).fetchone()
         return row
+
+    seed = random.randint(1, 1000000)
     connection.execute(
-        "INSERT INTO user_state (username, current_index, total_attempts, correct_attempts, incorrect_attempts) "
-        "VALUES (?, 0, 0, 0, 0)",
-        (username,),
+        "INSERT INTO user_state (username, current_index, total_attempts, correct_attempts, incorrect_attempts, shuffle_seed) "
+        "VALUES (?, 0, 0, 0, 0, ?)",
+        (username, seed),
     )
     return connection.execute(
-        "SELECT username, current_index, total_attempts, correct_attempts, incorrect_attempts "
+        "SELECT username, current_index, total_attempts, correct_attempts, incorrect_attempts, shuffle_seed "
         "FROM user_state WHERE username = ?",
         (username,),
     ).fetchone()
@@ -366,7 +401,8 @@ def get_leaderboard() -> List[dict]:
                 correct_attempts, 
                 incorrect_attempts,
                 (correct_attempts * 100 / CASE WHEN total_attempts = 0 THEN 1 ELSE total_attempts END) AS accuracy,
-                (SELECT COUNT(*) FROM user_errors WHERE user_errors.username = user_state.username) AS remaining_errors
+                (SELECT COUNT(*) FROM user_errors WHERE user_errors.username = user_state.username) AS remaining_errors,
+                (SELECT COUNT(DISTINCT scenario_key) FROM user_attempts WHERE user_attempts.username = user_state.username) AS unique_attempts
             FROM user_state
             WHERE total_attempts > 0
             ORDER BY accuracy DESC, total_attempts DESC
@@ -466,7 +502,7 @@ def start_user(username: str, payload: StartRequest) -> StartResponse:
             )
             
         state = get_or_create_state(connection, normalized)
-        scenario = get_current_scenario(int(state["current_index"]))
+        scenario = get_user_current_scenario(int(state["current_index"]), int(state["shuffle_seed"]))
         return StartResponse(
             username=normalized,
             total_scenarios=len(SCENARIOS),
@@ -485,6 +521,13 @@ def get_progress(username: str) -> ProgressResponse:
             "SELECT scenario_key FROM user_errors WHERE username = ?", (normalized,)
         )
         error_keys = [row["scenario_key"] for row in cursor.fetchall()]
+        
+        # Fetch attempted keys
+        cursor = connection.execute(
+            "SELECT DISTINCT scenario_key FROM user_attempts WHERE username = ?", (normalized,)
+        )
+        attempted_keys = [row["scenario_key"] for row in cursor.fetchall()]
+        
         return ProgressResponse(
             username=normalized,
             total_attempts=int(state["total_attempts"]),
@@ -492,7 +535,32 @@ def get_progress(username: str) -> ProgressResponse:
             incorrect_attempts=int(state["incorrect_attempts"]),
             remaining_errors=count_errors(connection, normalized),
             error_keys=error_keys,
+            attempted_keys=attempted_keys,
         )
+
+
+@app.get("/api/users/{username}/error-scenario")
+def get_error_scenario(username: str) -> Optional[dict]:
+    normalized = normalize_username(username)
+    with open_db() as connection:
+        cursor = connection.execute(
+            "SELECT scenario_key FROM user_errors WHERE username = ? ORDER BY rowid ASC",
+            (normalized,)
+        )
+        row = cursor.fetchone()
+        if row:
+            key = row["scenario_key"]
+            return SCENARIOS[key].to_public()
+    return None
+
+
+@app.get("/api/users/{username}/current-scenario")
+def get_current_user_scenario(username: str) -> dict:
+    normalized = normalize_username(username)
+    with open_db() as connection:
+        state = get_or_create_state(connection, normalized)
+        scenario = get_user_current_scenario(int(state["current_index"]), int(state["shuffle_seed"]))
+        return scenario.to_public()
 
 
 @app.post("/api/users/{username}/answer", response_model=AnswerResponse)
@@ -511,43 +579,108 @@ def submit_answer(username: str, payload: AnswerRequest) -> AnswerResponse:
     is_correct = action == scenario.best_action
     with open_db() as connection:
         state = get_or_create_state(connection, normalized)
-        total_attempts = int(state["total_attempts"]) + 1
-        correct_attempts = int(state["correct_attempts"]) + (1 if is_correct else 0)
-        incorrect_attempts = int(state["incorrect_attempts"]) + (0 if is_correct else 1)
-        next_index = (int(state["current_index"]) + 1) % len(SCENARIO_ORDER)
-
-        connection.execute(
-            "UPDATE user_state SET current_index = ?, total_attempts = ?, correct_attempts = ?, incorrect_attempts = ? "
-            "WHERE username = ?",
-            (next_index, total_attempts, correct_attempts, incorrect_attempts, normalized),
-        )
-
-        if is_correct:
-            connection.execute(
-                "DELETE FROM user_errors WHERE username = ? AND scenario_key = ?",
-                (normalized, scenario.key),
-            )
+        
+        if payload.review_mode:
+            # Review Mode Sandbox: standard progression, attempts, and unique exploration remain completely frozen!
+            total_attempts = int(state["total_attempts"])
+            correct_attempts = int(state["correct_attempts"])
+            incorrect_attempts = int(state["incorrect_attempts"])
+            next_index = int(state["current_index"])
+            seed = int(state["shuffle_seed"])
+            
+            if is_correct:
+                connection.execute(
+                    "DELETE FROM user_errors WHERE username = ? AND scenario_key = ?",
+                    (normalized, scenario.key),
+                )
         else:
+            # Standard Mode: standard progression and attempts are recorded
+            total_attempts = int(state["total_attempts"]) + 1
+            correct_attempts = int(state["correct_attempts"]) + (1 if is_correct else 0)
+            incorrect_attempts = int(state["incorrect_attempts"]) + (0 if is_correct else 1)
+            
+            next_index = int(state["current_index"]) + 1
+            seed = int(state["shuffle_seed"])
+            
+            if next_index >= len(SCENARIO_ORDER):
+                # End of full cycle! Generate a new random seed and reset index to 0
+                seed = random.randint(1, 1000000)
+                next_index = 0
+                connection.execute(
+                    "UPDATE user_state SET current_index = ?, total_attempts = ?, correct_attempts = ?, incorrect_attempts = ?, shuffle_seed = ? "
+                    "WHERE username = ?",
+                    (next_index, total_attempts, correct_attempts, incorrect_attempts, seed, normalized),
+                )
+            else:
+                connection.execute(
+                    "UPDATE user_state SET current_index = ?, total_attempts = ?, correct_attempts = ?, incorrect_attempts = ? "
+                    "WHERE username = ?",
+                    (next_index, total_attempts, correct_attempts, incorrect_attempts, normalized),
+                )
+
+            if is_correct:
+                connection.execute(
+                    "DELETE FROM user_errors WHERE username = ? AND scenario_key = ?",
+                    (normalized, scenario.key),
+                )
+            else:
+                connection.execute(
+                    "INSERT OR IGNORE INTO user_errors (username, scenario_key) VALUES (?, ?)",
+                    (normalized, scenario.key),
+                )
+
             connection.execute(
-                "INSERT OR IGNORE INTO user_errors (username, scenario_key) VALUES (?, ?)",
-                (normalized, scenario.key),
+                "INSERT INTO user_attempts (username, scenario_key, action, correct_action, is_correct, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    normalized,
+                    scenario.key,
+                    action,
+                    scenario.best_action,
+                    1 if is_correct else 0,
+                    int(time.time()),
+                ),
             )
 
-        connection.execute(
-            "INSERT INTO user_attempts (username, scenario_key, action, correct_action, is_correct, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                normalized,
-                scenario.key,
-                action,
-                scenario.best_action,
-                1 if is_correct else 0,
-                int(time.time()),
-            ),
-        )
-
-        next_scenario = get_current_scenario(next_index)
         remaining_errors = count_errors(connection, normalized)
+
+        # Determine the next scenario depending on whether review mode is active
+        errors_cleared = False
+        if payload.review_mode:
+            # Query remaining errors AFTER deleting/inserting for this question
+            cursor = connection.execute(
+                "SELECT scenario_key FROM user_errors WHERE username = ? ORDER BY rowid ASC",
+                (normalized,)
+            )
+            errors = [row["scenario_key"] for row in cursor.fetchall()]
+            
+            if errors:
+                # Select the first error that is NOT the current one (if possible) to prevent immediate repetitions
+                next_key = None
+                for err_key in errors:
+                    if err_key != scenario.key:
+                        next_key = err_key
+                        break
+                if next_key is None:
+                    next_key = errors[0]
+                next_scenario = SCENARIOS[next_key]
+            else:
+                # No errors left! All errors successfully cleared!
+                errors_cleared = True
+                next_scenario = get_user_current_scenario(next_index, seed)
+        else:
+            next_scenario = get_user_current_scenario(next_index, seed)
+
+        # Fetch updated active error keys and attempted keys to return in AnswerResponse
+        cursor = connection.execute(
+            "SELECT scenario_key FROM user_errors WHERE username = ?", (normalized,)
+        )
+        error_keys = [row["scenario_key"] for row in cursor.fetchall()]
+        
+        cursor = connection.execute(
+            "SELECT DISTINCT scenario_key FROM user_attempts WHERE username = ?", (normalized,)
+        )
+        attempted_keys = [row["scenario_key"] for row in cursor.fetchall()]
 
     return AnswerResponse(
         correct=is_correct,
@@ -557,6 +690,10 @@ def submit_answer(username: str, payload: AnswerRequest) -> AnswerResponse:
         incorrect_attempts=incorrect_attempts,
         remaining_errors=remaining_errors,
         next_scenario=next_scenario.to_public(),
+        error_keys=error_keys,
+        attempted_keys=attempted_keys,
+        review_mode=payload.review_mode,
+        errors_cleared=errors_cleared,
     )
 
 
@@ -565,7 +702,7 @@ def main() -> None:
 
     host = os.getenv("BLACKJACK_WEB_HOST", "127.0.0.1")
     port = int(os.getenv("BLACKJACK_WEB_PORT", "8000"))
-    uvicorn.run("game.web_api:app", host=host, port=port, reload=False)
+    uvicorn.run("game.web_api:app", host=host, port=port, reload=True)
 
 
 if __name__ == "__main__":

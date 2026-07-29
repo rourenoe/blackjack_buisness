@@ -1076,6 +1076,13 @@ input:focus {
   color: #ddd6fe;
 }
 
+/* Unattempted state (Grey/Neutral) */
+.cell-unattempted {
+  background: rgba(148, 163, 184, 0.1) !important;
+  border: 1.5px solid rgba(148, 163, 184, 0.25) !important;
+  color: #94a3b8 !important;
+}
+
 /* Personal master state (Green) */
 .cell-mastered {
   background: rgba(16, 185, 129, 0.8) !important;
@@ -1095,4 +1102,349 @@ input:focus {
   0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
   70% { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0); }
   100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+/* Exploration Progress Bar Fire gradients */
+.exploration-fill {
+  background: linear-gradient(90deg, #f59e0b, #ef4444) !important;
+}
+
+/* Fire level 1: Warm glow */
+.fire-soft-glow {
+  animation: fire-soft-glow-key 2s infinite ease-in-out;
+  border-color: rgba(245, 158, 11, 0.45) !important;
+}
+
+@keyframes fire-soft-glow-key {
+  0%, 100% { box-shadow: 0 0 10px rgba(245, 158, 11, 0.35); }
+  50% { box-shadow: 0 0 18px rgba(245, 158, 11, 0.65); }
+}
+
+/* Fire level 2: Flickering medium fire */
+.fire-flicker-medium {
+  animation: fire-flicker-medium-key 1.5s infinite alternate ease-in-out;
+  border-color: rgba(239, 68, 68, 0.5) !important;
+}
+
+@keyframes fire-flicker-medium-key {
+  0% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.4), 0 0 6px rgba(245, 158, 11, 0.3); }
+  50% { box-shadow: 0 0 22px rgba(239, 68, 68, 0.7), 0 0 10px rgba(245, 158, 11, 0.5); }
+  100% { box-shadow: 0 0 16px rgba(239, 68, 68, 0.5), 0 0 14px rgba(245, 158, 11, 0.4); }
+}
+
+/* Fire level 3: Full intense blaze */
+.fire-blaze {
+  animation: fire-blaze-key 0.8s infinite alternate ease-in-out;
+  border: 1.5px solid #ef4444 !important;
+  background: rgba(239, 68, 68, 0.08) !important;
+}
+
+@keyframes fire-blaze-key {
+  0% { 
+    box-shadow: 0 0 15px #ef4444, 0 0 8px #f59e0b, 0 0 25px rgba(245, 158, 11, 0.4);
+    transform: scale(1);
+  }
+  100% { 
+    box-shadow: 0 0 32px #ef4444, 0 0 16px #f59e0b, 0 0 40px rgba(239, 68, 68, 0.6);
+    transform: scale(1.015);
+  }
+}
+
+/* Table Exploration Progress HUD inside Practice Table */
+.table-exploration-wrapper {
+  background: rgba(5, 15, 10, 0.45);
+  border: 1px solid rgba(31, 66, 52, 0.5);
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 22px;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.table-exploration-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #a4b6d0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+/* Tier 0: Ice */
+.tier-ice {
+  border-color: rgba(147, 197, 253, 0.4) !important;
+  box-shadow: 0 0 10px rgba(147, 197, 253, 0.2);
+}
+
+/* Tier 1: Frost */
+.tier-frost {
+  border-color: rgba(96, 165, 250, 0.5) !important;
+  box-shadow: 0 0 15px rgba(96, 165, 250, 0.3);
+}
+
+/* Tier 2: Melt */
+.tier-melt {
+  border-color: rgba(56, 189, 248, 0.6) !important;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.35);
+}
+
+/* Tier 3: Vapor */
+.tier-vapor {
+  border-color: rgba(165, 243, 252, 0.7) !important;
+  box-shadow: 0 0 20px rgba(165, 243, 252, 0.4);
+}
+
+/* Tier 4: Spark */
+.tier-spark {
+  border-color: rgba(74, 222, 128, 0.7) !important;
+  box-shadow: 0 0 22px rgba(74, 222, 128, 0.45);
+}
+
+/* Tier 5: Electric */
+.tier-electric {
+  border-color: #facc15 !important;
+  box-shadow: 0 0 25px rgba(250, 204, 21, 0.5);
+  animation: electric-pulse 1.5s infinite alternate ease-in-out;
+}
+@keyframes electric-pulse {
+  0% { box-shadow: 0 0 12px rgba(250, 204, 21, 0.3); }
+  100% { box-shadow: 0 0 28px rgba(250, 204, 21, 0.65); }
+}
+
+/* Tier 6: Warm */
+.tier-warm {
+  border-color: rgba(249, 115, 22, 0.7) !important;
+  box-shadow: 0 0 22px rgba(249, 115, 22, 0.45);
+}
+
+/* Tier 7: Fire */
+.tier-fire {
+  border-color: rgba(239, 68, 68, 0.8) !important;
+  box-shadow: 0 0 25px rgba(239, 68, 68, 0.5);
+  animation: fire-glow 1.5s infinite alternate ease-in-out;
+}
+@keyframes fire-glow {
+  0% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.3); }
+  100% { box-shadow: 0 0 30px rgba(239, 68, 68, 0.7); }
+}
+
+/* Tier 8: Volcano */
+.tier-volcano {
+  border-color: #b91c1c !important;
+  box-shadow: 0 0 30px rgba(185, 28, 28, 0.7);
+  animation: volcano-pulse 1s infinite alternate ease-in-out;
+}
+@keyframes volcano-pulse {
+  0% { box-shadow: 0 0 15px rgba(185, 28, 28, 0.4); transform: scale(1); }
+  100% { box-shadow: 0 0 35px rgba(185, 28, 28, 0.85); transform: scale(1.008); }
+}
+
+/* Tier 9: Supernova */
+.tier-supernova {
+  border-color: #ec4899 !important;
+  box-shadow: 0 0 35px rgba(236, 72, 153, 0.8);
+  animation: supernova-pulse 1.2s infinite alternate ease-in-out;
+}
+@keyframes supernova-pulse {
+  0% { box-shadow: 0 0 15px rgba(236, 72, 153, 0.5), 0 0 10px rgba(59, 130, 246, 0.3); }
+  100% { box-shadow: 0 0 45px rgba(236, 72, 153, 0.9), 0 0 25px rgba(59, 130, 246, 0.6); transform: scale(1.012); }
+}
+
+/* Celebration Full Screen Overlay */
+.celebration-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.92);
+  display: none; /* Hidden by default to avoid specificity bugs with hidden attribute */
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  pointer-events: none; /* Do not block clicks when hidden */
+}
+
+.celebration-overlay.active {
+  display: flex !important;
+  pointer-events: auto; /* Active clicking when visible */
+  animation: celebration-fade 0.5s ease-out forwards;
+}
+
+@keyframes celebration-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.celebration-content {
+  transform: scale(0.7);
+  opacity: 0;
+  animation: celebration-zoom 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.1s forwards;
+}
+
+@keyframes celebration-zoom {
+  to { transform: scale(1); opacity: 1; }
+}
+
+.celebration-badge {
+  font-size: 6rem;
+  margin-bottom: 24px;
+  animation: celebration-bounce 2s infinite ease-in-out;
+  filter: drop-shadow(0 0 30px rgba(255, 255, 255, 0.5));
+}
+
+@keyframes celebration-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-15px) scale(1.05); }
+}
+
+.celebration-title {
+  font-size: 3rem;
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: #ffffff;
+  margin: 0 0 10px 0;
+  text-shadow: 0 0 30px rgba(255, 255, 255, 0.6);
+  font-family: 'Segoe UI', Arial, sans-serif;
+}
+
+.celebration-subtitle {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--gold-primary);
+  margin: 0;
+  text-transform: uppercase;
+  text-shadow: 0 0 15px rgba(229, 193, 88, 0.5);
+}
+
+/* Theme Borders & Gradients */
+.celebration-overlay.theme-ice,
+.celebration-overlay.theme-frost {
+  background: radial-gradient(circle, rgba(16, 37, 66, 0.96) 0%, rgba(3, 7, 15, 0.99) 100%);
+  border: 15px solid #93c5fd;
+  box-shadow: inset 0 0 150px rgba(147, 197, 253, 0.4);
+}
+
+.celebration-overlay.theme-melt {
+  background: radial-gradient(circle, rgba(10, 48, 66, 0.96) 0%, rgba(2, 8, 15, 0.99) 100%);
+  border: 15px solid #38bdf8;
+  box-shadow: inset 0 0 150px rgba(56, 189, 248, 0.45);
+}
+
+.celebration-overlay.theme-vapor {
+  background: radial-gradient(circle, rgba(20, 56, 66, 0.96) 0%, rgba(2, 10, 15, 0.99) 100%);
+  border: 15px solid #a5f3fc;
+  box-shadow: inset 0 0 150px rgba(165, 243, 252, 0.45);
+}
+
+.celebration-overlay.theme-spark {
+  background: radial-gradient(circle, rgba(12, 56, 24, 0.96) 0%, rgba(2, 10, 4, 0.99) 100%);
+  border: 15px solid #4ade80;
+  box-shadow: inset 0 0 150px rgba(74, 222, 128, 0.45);
+}
+
+.celebration-overlay.theme-electric {
+  background: radial-gradient(circle, rgba(31, 31, 15, 0.96) 0%, rgba(5, 5, 2, 0.99) 100%);
+  border: 15px solid #facc15;
+  box-shadow: inset 0 0 150px rgba(250, 204, 21, 0.5);
+  animation: flash-strobe 0.1s infinite alternate;
+}
+@keyframes flash-strobe {
+  0% { filter: brightness(1); }
+  100% { filter: brightness(1.15); }
+}
+
+.celebration-overlay.theme-warm {
+  background: radial-gradient(circle, rgba(56, 32, 12, 0.96) 0%, rgba(10, 5, 2, 0.99) 100%);
+  border: 15px solid #f97316;
+  box-shadow: inset 0 0 150px rgba(249, 115, 22, 0.5);
+}
+
+.celebration-overlay.theme-fire,
+.celebration-overlay.theme-volcano {
+  background: radial-gradient(circle, rgba(56, 12, 12, 0.96) 0%, rgba(10, 2, 2, 0.99) 100%);
+  border: 15px solid #ef4444;
+  box-shadow: inset 0 0 150px rgba(239, 68, 68, 0.6);
+  animation: shake-screen 0.15s infinite alternate;
+}
+@keyframes shake-screen {
+  0% { transform: translate(2px, 2px) rotate(0deg); }
+  100% { transform: translate(-2px, -2px) rotate(0.4deg); }
+}
+
+.celebration-overlay.theme-supernova {
+  background: radial-gradient(circle, rgba(48, 12, 48, 0.96) 0%, rgba(10, 2, 10, 0.99) 100%);
+  border: 15px double #ec4899;
+  box-shadow: inset 0 0 200px rgba(236, 72, 153, 0.7);
+  animation: supernova-color-cycle 3s infinite alternate ease-in-out;
+}
+@keyframes supernova-color-cycle {
+  0% { filter: hue-rotate(0deg) contrast(1); }
+  100% { filter: hue-rotate(360deg) contrast(1.15); }
+}
+
+/* Shooting particles container and style */
+.celebration-particles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.particle {
+  position: absolute;
+  user-select: none;
+  animation: particle-shoot 2s ease-out forwards;
+}
+
+@keyframes particle-shoot {
+  0% {
+    opacity: 1;
+    transform: translateY(110vh) rotate(0deg) scale(0.5);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-20vh) rotate(360deg) scale(2);
+  }
+}
+
+/* Premium retro action button for Error Review Mode */
+.btn-review-errors {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+}
+
+.btn-review-errors:hover:not(:disabled) {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  transform: translateY(-1.5px);
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.55);
+}
+
+.btn-review-errors:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-review-errors:disabled {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.3) !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
 }

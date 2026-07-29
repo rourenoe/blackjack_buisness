@@ -1,6 +1,9 @@
 let currentUser = null;
 let currentScenario = null;
+let isActionPending = false; // Prevent double click submit API race conditions
+let isReviewMode = false;    // Tracks whether player is retrying errors
 let activeErrorKeys = [];
+let attemptedKeys = [];
 let cachedStrategyMap = null;
 let currentHeatmapCategory = "hard";
 
@@ -9,6 +12,7 @@ const passwordInput = document.getElementById("password");
 const startBtn = document.getElementById("startBtn");
 const registerBtn = document.getElementById("registerBtn");
 const logoutBtn = document.getElementById("logoutBtn");
+const reviewErrorsBtn = document.getElementById("reviewErrorsBtn"); // New premium error review action button
 const loginFormState = document.getElementById("loginFormState");
 const loggedInState = document.getElementById("loggedInState");
 const loggedInUser = document.getElementById("loggedInUser");
@@ -164,11 +168,193 @@ function renderScenario(scenario) {
   });
 }
 
+// Dynamic Level and Celebration Systems
+let currentUserTierLevel = null;
+
+const TIERS = [
+  { level: 0, min: 0,   name: "🥶 Absolute Zero",  color: "#93c5fd", nextMin: 10,  theme: "ice" },
+  { level: 1, min: 10,  name: "🧊 Frosty Chill",   color: "#60a5fa", nextMin: 30,  theme: "frost" },
+  { level: 2, min: 30,  name: "💧 Melting Point",  color: "#38bdf8", nextMin: 60,  theme: "melt" },
+  { level: 3, min: 60,  name: "💨 Rising Vapor",   color: "#a5f3fc", nextMin: 90,  theme: "vapor" },
+  { level: 4, min: 90,  name: "🌱 Green Spark",    color: "#4ade80", nextMin: 120, theme: "spark" },
+  { level: 5, min: 120, name: "⚡ Static Charge",  color: "#facc15", nextMin: 150, theme: "electric" },
+  { level: 6, min: 150, name: "🔥 Warm Spark",     color: "#f97316", nextMin: 200, theme: "warm" },
+  { level: 7, min: 200, name: "💥 Fire Charge",    color: "#ef4444", nextMin: 250, theme: "fire" },
+  { level: 8, min: 250, name: "🌋 Volcanic Flow",  color: "#b91c1c", nextMin: 300, theme: "volcano" },
+  { level: 9, min: 300, name: "🌌 Cosmic Supernova", color: "#ec4899", nextMin: null, theme: "supernova" }
+];
+
+function getTier(count) {
+  for (let i = TIERS.length - 1; i >= 0; i--) {
+    if (count >= TIERS[i].min) {
+      return TIERS[i];
+    }
+  }
+  return TIERS[0];
+}
+
+function playArcadeLevelUpSound(level) {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return;
+  const ctx = new AudioContext();
+  
+  // Retro arpeggios that rise rapidly
+  const notes = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99, 1046.50];
+  const duration = 0.12;
+  
+  notes.forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    // Triangle wave for frost/electro, Sawtooth for crazy explosive volcano/supernova
+    osc.type = level >= 7 ? "sawtooth" : (level >= 4 ? "triangle" : "sine");
+    osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.08);
+    
+    gain.gain.setValueAtTime(0.12, ctx.currentTime + i * 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.08 + duration);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start(ctx.currentTime + i * 0.08);
+    osc.stop(ctx.currentTime + i * 0.08 + duration);
+  });
+}
+
+function playActionSound(action) {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return;
+  const ctx = new AudioContext();
+  
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  
+  const now = ctx.currentTime;
+  
+  if (action === "hit") {
+    // Sharp click/zap
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(600, now);
+    osc.frequency.exponentialRampToValueAtTime(150, now + 0.08);
+    gain.gain.setValueAtTime(0.08, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    osc.start(now);
+    osc.stop(now + 0.08);
+  } else if (action === "stand") {
+    // Solid clean thud
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(250, now);
+    osc.frequency.exponentialRampToValueAtTime(100, now + 0.12);
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    osc.start(now);
+    osc.stop(now + 0.12);
+  } else if (action === "double") {
+    // Double coin retro chime
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(523.25, now); // C5
+    osc.frequency.setValueAtTime(783.99, now + 0.06); // G5
+    gain.gain.setValueAtTime(0.08, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    osc.start(now);
+    osc.stop(now + 0.15);
+  } else if (action === "split") {
+    // Quick sharp scissor slice sweep
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(800, now);
+    osc.frequency.linearRampToValueAtTime(1800, now + 0.10);
+    gain.gain.setValueAtTime(0.06, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.10);
+    osc.start(now);
+    osc.stop(now + 0.10);
+  }
+}
+
+function triggerCelebration(tier) {
+  const overlay = document.getElementById("celebrationOverlay");
+  const badge = document.getElementById("celebrationBadge");
+  const subtitle = document.getElementById("celebrationSubtitle");
+  if (!overlay) return;
+
+  if (subtitle) subtitle.textContent = tier.name;
+  if (badge) {
+    const emojiMatch = tier.name.match(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]/u);
+    badge.textContent = emojiMatch ? emojiMatch[0] : "🌟";
+  }
+
+  overlay.className = "celebration-overlay active";
+  overlay.classList.add(`theme-${tier.theme}`);
+
+  // Create floating elements
+  const container = document.createElement("div");
+  container.className = "celebration-particles";
+  overlay.appendChild(container);
+
+  const emojiList = ["🎉", "🔥", "💥", "⚡", "✨", "🧊", "❄️", "🌋", "🌌"];
+  const chosenEmoji = emojiList[tier.level % emojiList.length];
+
+  for (let i = 0; i < 40; i++) {
+    const particle = document.createElement("span");
+    particle.className = "particle";
+    particle.textContent = chosenEmoji;
+    particle.style.left = `${Math.random() * 100}vw`;
+    particle.style.bottom = `-50px`;
+    particle.style.fontSize = `${Math.random() * 1.5 + 1}rem`;
+    particle.style.animationDelay = `${Math.random() * 1.5}s`;
+    particle.style.animationDuration = `${Math.random() * 1.5 + 1}s`;
+    particle.style.transform = `rotate(${Math.random() * 360}deg)`;
+    container.appendChild(particle);
+  }
+
+  overlay.removeAttribute("hidden");
+
+  try {
+    playArcadeLevelUpSound(tier.level);
+  } catch (e) {
+    console.log("Audio contexts blocked");
+  }
+
+  setTimeout(() => {
+    overlay.setAttribute("hidden", "true");
+    overlay.classList.remove("active");
+    container.remove();
+  }, 3200);
+}
+
+function updateReviewButtonUI(remainingErrorsCount = activeErrorKeys.length) {
+  if (!reviewErrorsBtn) return;
+  
+  if (!currentUser) {
+    reviewErrorsBtn.style.display = "none";
+    return;
+  }
+
+  if (isReviewMode) {
+    reviewErrorsBtn.style.display = "inline-block";
+    reviewErrorsBtn.textContent = "🚪 Exit Review Mode";
+    reviewErrorsBtn.style.background = "linear-gradient(135deg, #ef4444, #dc2626)";
+    reviewErrorsBtn.style.boxShadow = "0 0 12px rgba(239, 68, 68, 0.4)";
+  } else {
+    if (remainingErrorsCount > 0) {
+      reviewErrorsBtn.style.display = "inline-block";
+      reviewErrorsBtn.textContent = `🎯 Practice Errors (${remainingErrorsCount})`;
+      reviewErrorsBtn.style.background = "linear-gradient(135deg, #f59e0b, #d97706)";
+      reviewErrorsBtn.style.boxShadow = "0 0 10px rgba(245, 158, 11, 0.3)";
+    } else {
+      reviewErrorsBtn.style.display = "none";
+    }
+  }
+}
+
 function renderProgress(data) {
   progressPanel.hidden = false;
   
-  // Save active error keys for strategy map highlight
+  // Save active error keys and attempted keys for strategy map highlight
   activeErrorKeys = data.error_keys || [];
+  attemptedKeys = data.attempted_keys || [];
   drawHeatmap(); // Redraw heatmap with current performance
 
   // Update legacy hidden text
@@ -176,26 +362,80 @@ function renderProgress(data) {
 
   // Compute stats
   const total = data.total_attempts;
-  const correct = data.correct_attempts;
   const wrong = data.incorrect_attempts;
   const remaining = data.remaining_errors;
-  const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
+  const accuracy = total > 0 ? Math.round((data.correct_attempts / total) * 100) : 0;
+  const explorationPct = Math.round((attemptedKeys.length / 310) * 100);
 
   // Retrieve dashboard DOM nodes
   const statAccuracy = document.getElementById("statAccuracy");
   const statAccuracyBar = document.getElementById("statAccuracyBar");
-  const statCorrect = document.getElementById("statCorrect");
-  const statTotalCorrect = document.getElementById("statTotalCorrect");
+  const statExploration = document.getElementById("statExploration");
+  const statExplorationBar = document.getElementById("statExplorationBar");
   const statWrong = document.getElementById("statWrong");
   const statRemaining = document.getElementById("statRemaining");
+
+  // Determine current active tier
+  const activeTier = getTier(attemptedKeys.length);
 
   // Update nodes with values and animations
   if (statAccuracy) statAccuracy.textContent = `${accuracy}%`;
   if (statAccuracyBar) statAccuracyBar.style.width = `${accuracy}%`;
-  if (statCorrect) statCorrect.textContent = correct;
-  if (statTotalCorrect) statTotalCorrect.textContent = `Out of ${total} attempt${total === 1 ? '' : 's'}`;
+  if (statExploration) statExploration.textContent = `${attemptedKeys.length} / 310`;
+  
+  if (statExplorationBar) {
+    statExplorationBar.style.width = `${explorationPct}%`;
+    statExplorationBar.style.background = activeTier.color; // Dynamic tier-colored progress bar!
+  }
+  
   if (statWrong) statWrong.textContent = wrong;
   if (statRemaining) statRemaining.textContent = remaining;
+
+  // Update tier labels and next level requirements info
+  const tierNameEl = document.getElementById("tierName");
+  if (tierNameEl) {
+    tierNameEl.textContent = activeTier.name;
+  }
+
+  const tierNextInfo = document.getElementById("tierNextInfo");
+  if (tierNextInfo) {
+    if (isReviewMode) {
+      tierNextInfo.innerHTML = `<span class="text-gold" style="font-weight: 800; animation: pulse-border 1.5s infinite;">⚠️ Error Review Active: Cleared mistakes are permanently removed!</span>`;
+    } else {
+      if (activeTier.nextMin !== null) {
+        const needed = activeTier.nextMin - attemptedKeys.length;
+        tierNextInfo.textContent = `🎯 Only ${needed} more unique hand${needed === 1 ? '' : 's'} to explore to unlock the next tier!`;
+      } else {
+        tierNextInfo.textContent = "🏆 Master Explorer! All 310 basic hands explored! 🌟";
+      }
+    }
+  }
+
+  // Update Practice Errors action button HUD
+  updateReviewButtonUI(remaining);
+
+  // Apply dynamic tier glow effects and borders to exploration card HUD
+  const card = document.getElementById("explorationCard");
+  if (card) {
+    card.className = "table-exploration-wrapper"; // Reset
+    card.classList.add(`tier-${activeTier.theme}`); // Apply specific tier border and aura
+    if (isReviewMode) {
+      // In review mode, give a glowing red/orange warning border!
+      card.style.borderColor = "var(--accent-crimson)";
+      card.style.boxShadow = "0 0 15px rgba(239, 68, 68, 0.4)";
+    } else {
+      card.style.borderColor = "";
+      card.style.boxShadow = "";
+    }
+  }
+
+  // Trigger full screen celebratory effects when a level boundary is crossed
+  if (currentUserTierLevel === null) {
+    currentUserTierLevel = activeTier.level;
+  } else if (activeTier.level > currentUserTierLevel) {
+    triggerCelebration(activeTier);
+    currentUserTierLevel = activeTier.level;
+  }
 }
 
 async function fetchProgress() {
@@ -216,12 +456,17 @@ function setSessionState(authenticated, username = "") {
   } else {
     currentUser = null;
     currentScenario = null;
+    currentUserTierLevel = null; // Clear level memory on session end
+    isReviewMode = false;        // Deactivate review mode on logout
+    activeErrorKeys = [];
+    attemptedKeys = [];
     if (loginFormState) loginFormState.hidden = false;
     if (loggedInState) loggedInState.hidden = true;
     if (scenarioPanel) scenarioPanel.hidden = true;
     if (progressPanel) progressPanel.hidden = true;
     if (usernameInput) usernameInput.value = "";
     if (passwordInput) passwordInput.value = "";
+    drawHeatmap(); // Draw clean anonymous heatmap
   }
 }
 
@@ -234,11 +479,11 @@ async function handleAuth(mode) {
     return;
   }
   if (!password || !/^\d{6}$/.test(password)) {
-    setMessage(userStatus, "Veuillez entrer un code PIN à 6 chiffres.", "ko");
+    setMessage(userStatus, "Please enter a 6-digit PIN.", "ko");
     return;
   }
 
-  setMessage(userStatus, mode === "login" ? "Connexion en cours..." : "Création du compte...");
+  setMessage(userStatus, mode === "login" ? "Logging in..." : "Creating account...");
   feedback.textContent = "";
 
   try {
@@ -255,7 +500,7 @@ async function handleAuth(mode) {
     }
 
     setSessionState(true, data.username);
-    setMessage(userStatus, mode === "login" ? "Connexion réussie !" : "Compte créé avec succès !", "ok");
+    setMessage(userStatus, mode === "login" ? "Login successful!" : "Account created successfully!", "ok");
     renderScenario(data.scenario);
     await fetchProgress();
     await fetchLeaderboard();
@@ -289,7 +534,22 @@ document.querySelectorAll("[data-action]").forEach((btn) => {
       return;
     }
 
+    // Prevent race conditions and double-clicking during active API call
+    if (isActionPending) return;
+    isActionPending = true;
+
+    // Immediately disable all action buttons in the DOM for immediate user feedback
+    document.querySelectorAll("[data-action]").forEach((b) => b.disabled = true);
+
     const action = btn.getAttribute("data-action");
+    
+    // Play retro action sound instantly on click!
+    try {
+      playActionSound(action);
+    } catch (e) {
+      console.log("Audio contexts blocked");
+    }
+
     try {
       const res = await fetch(`/api/users/${encodeURIComponent(currentUser)}/answer`, {
         method: "POST",
@@ -297,12 +557,15 @@ document.querySelectorAll("[data-action]").forEach((btn) => {
         body: JSON.stringify({
           scenario_key: currentScenario.key,
           action: action,
+          review_mode: isReviewMode // Sends the active review state to backend
         }),
       });
 
       if (!res.ok) {
         const body = await res.json();
         setMessage(feedback, body.detail || "Request failed.", "ko");
+        // Re-enable valid buttons in case of failure
+        renderScenario(currentScenario);
         return;
       }
 
@@ -313,11 +576,23 @@ document.querySelectorAll("[data-action]").forEach((btn) => {
         setMessage(feedback, `❌ Wrong. Best action: ${data.correct_action.toUpperCase()}`, "ko");
       }
 
+      // Check if Error Review Mode was successfully completed!
+      if (data.review_mode && data.errors_cleared) {
+        isReviewMode = false;
+        setMessage(feedback, "🏆 Outstanding! You have successfully cleared ALL of your errors! Standard mode restored.", "ok");
+        // Fire a majestic cosmic celebration for clearing all active mistakes!
+        triggerCelebration({ level: 9, name: "👑 Errors Cleared!", theme: "supernova" });
+      }
+
       renderScenario(data.next_scenario);
       renderProgress(data);
       await fetchLeaderboard(); // Update leaderboard in real-time
     } catch (error) {
       setMessage(feedback, "Communication error occurred.", "ko");
+      // Re-enable valid buttons in case of connection failure
+      renderScenario(currentScenario);
+    } finally {
+      isActionPending = false;
     }
   });
 });
@@ -336,7 +611,7 @@ async function fetchLeaderboard() {
     bodyEl.innerHTML = "";
     
     if (data.length === 0) {
-      bodyEl.innerHTML = `<tr><td colspan="5" class="muted table-loading">No active players yet. Be the first!</td></tr>`;
+      bodyEl.innerHTML = `<tr><td colspan="6" class="muted table-loading">No active players yet. Be the first!</td></tr>`;
       return;
     }
 
@@ -358,12 +633,20 @@ async function fetchLeaderboard() {
         tdPlayer.innerHTML = `${row.username} <span class="badge badge-soft" style="font-size: 0.65rem; padding: 2px 6px; border: 1px solid var(--accent-blue);">YOU</span>`;
       }
 
+      // Dynamic Player Grade/Tier matching our 10 levels of exploration
+      const playerTier = getTier(row.unique_attempts || 0);
+      const tdGrade = document.createElement("td");
+      tdGrade.style.color = playerTier.color;
+      tdGrade.style.fontWeight = "800";
+      tdGrade.style.fontSize = "0.85rem";
+      tdGrade.innerHTML = playerTier.name;
+
       const tdAccuracy = document.createElement("td");
       tdAccuracy.className = "text-ok";
       tdAccuracy.innerHTML = `<strong>${row.accuracy}%</strong>`;
 
       const tdAttempts = document.createElement("td");
-      tdAttempts.textContent = row.total_attempts;
+      tdAttempts.innerHTML = `<strong>${row.unique_attempts || 0}</strong> <span class="muted" style="font-size: 0.75rem;">/ 310</span>`;
 
       const tdErrors = document.createElement("td");
       tdErrors.className = row.remaining_errors > 0 ? "text-ko" : "text-ok";
@@ -371,6 +654,7 @@ async function fetchLeaderboard() {
 
       tr.appendChild(tdRank);
       tr.appendChild(tdPlayer);
+      tr.appendChild(tdGrade);
       tr.appendChild(tdAccuracy);
       tr.appendChild(tdAttempts);
       tr.appendChild(tdErrors);
@@ -378,7 +662,7 @@ async function fetchLeaderboard() {
       bodyEl.appendChild(tr);
     });
   } catch (error) {
-    bodyEl.innerHTML = `<tr><td colspan="5" class="table-loading text-ko">Error loading leaderboard.</td></tr>`;
+    bodyEl.innerHTML = `<tr><td colspan="6" class="table-loading text-ko">Error loading leaderboard.</td></tr>`;
   }
 }
 
@@ -386,6 +670,63 @@ async function fetchLeaderboard() {
 const refreshLeaderboardBtn = document.getElementById("refreshLeaderboardBtn");
 if (refreshLeaderboardBtn) {
   refreshLeaderboardBtn.addEventListener("click", fetchLeaderboard);
+}
+
+// Practice Errors toggle button handler
+if (reviewErrorsBtn) {
+  reviewErrorsBtn.addEventListener("click", async () => {
+    if (!currentUser) return;
+
+    if (isReviewMode) {
+      // Toggle OFF: Return to standard training mode
+      isReviewMode = false;
+      feedback.textContent = "";
+      setMessage(feedback, "Review mode disabled. Standard practice restored.", "ok");
+      
+      try {
+        // Fetch the player's active standard scenario transparently
+        const res = await fetch(`/api/users/${encodeURIComponent(currentUser)}/current-scenario`);
+        if (res.ok) {
+          const scenario = await res.json();
+          if (scenario) {
+            renderScenario(scenario);
+          }
+        }
+        await fetchProgress(); // Refreshes and updates indicators
+      } catch (e) {
+        console.error("Failed to restore standard scenario:", e);
+      }
+      return;
+    }
+
+    // Toggle ON: Start practicing active errors
+    if (activeErrorKeys.length === 0) {
+      setMessage(feedback, "No active errors to review! Keep up the great work! 🌟", "ok");
+      return;
+    }
+
+    isReviewMode = true;
+    setMessage(feedback, "Error Review Mode Activated! Focused on mastering your mistakes. 🎯", "ok");
+
+    // Play a delightful double retro arcade sound on activation!
+    try {
+      playActionSound("double");
+    } catch (e) {}
+
+    try {
+      // Load the first active mistake instantly onto the felt table
+      const res = await fetch(`/api/users/${encodeURIComponent(currentUser)}/error-scenario`);
+      if (res.ok) {
+        const scenario = await res.json();
+        if (scenario) {
+          renderScenario(scenario);
+        }
+      }
+      await fetchProgress(); // Refreshes progress bar wrapper styling
+    } catch (e) {
+      console.error("Failed to load error scenario:", e);
+    }
+  });
 }
 
 // Admin Modal and Deletion logic
@@ -400,21 +741,21 @@ const adminStatus = document.getElementById("adminStatus");
 
 if (adminToggleBtn && adminModal) {
   adminToggleBtn.addEventListener("click", () => {
-    adminModal.hidden = false;
+    adminModal.classList.add("open");
     if (adminStatus) adminStatus.textContent = "";
   });
 }
 
 if (closeAdminBtn && adminModal) {
   closeAdminBtn.addEventListener("click", () => {
-    adminModal.hidden = true;
+    adminModal.classList.remove("open");
   });
 }
 
 if (adminModal) {
   adminModal.addEventListener("click", (e) => {
     if (e.target === adminModal) {
-      adminModal.hidden = true;
+      adminModal.classList.remove("open");
     }
   });
 }
@@ -464,8 +805,8 @@ if (deleteUserBtn) {
       
       // Auto close modal on success after 1 second for seamless UX
       setTimeout(() => {
-        if (!adminModal.hidden) {
-          adminModal.hidden = true;
+        if (adminModal.classList.contains("open")) {
+          adminModal.classList.remove("open");
         }
       }, 1200);
     } catch (error) {
@@ -578,7 +919,9 @@ async function drawHeatmap() {
 
       let performanceClass = "";
       if (currentUser) {
-        if (activeErrorKeys.includes(key)) {
+        if (!attemptedKeys.includes(key)) {
+          performanceClass = "cell-unattempted";
+        } else if (activeErrorKeys.includes(key)) {
           performanceClass = "cell-error";
         } else {
           performanceClass = "cell-mastered";
@@ -601,21 +944,21 @@ const closeStrategyBtn = document.getElementById("closeStrategyBtn");
 
 if (strategyToggleBtn && strategyModal) {
   strategyToggleBtn.addEventListener("click", () => {
-    strategyModal.hidden = false;
+    strategyModal.classList.add("open");
     drawHeatmap();
   });
 }
 
 if (closeStrategyBtn && strategyModal) {
   closeStrategyBtn.addEventListener("click", () => {
-    strategyModal.hidden = true;
+    strategyModal.classList.remove("open");
   });
 }
 
 if (strategyModal) {
   strategyModal.addEventListener("click", (e) => {
     if (e.target === strategyModal) {
-      strategyModal.hidden = true;
+      strategyModal.classList.remove("open");
     }
   });
 }

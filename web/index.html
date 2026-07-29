@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Blackjack Strategy Trainer</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=10">
 </head>
 <body>
   <div class="background-decor"></div>
@@ -71,6 +71,25 @@
       <div class="panel-header table-banner">
         <h2>Live Practice Table</h2>
         <span id="scenarioCategory" class="badge">HARD HANDS</span>
+      </div>
+      
+      <!-- Real-time Exploration Progress inside Practice Table with Fire effect -->
+      <div class="table-exploration-wrapper" id="explorationCard">
+        <div class="table-exploration-header">
+          <span>Current Tier: <strong id="tierName" style="text-shadow: 0 0 10px rgba(255,255,255,0.2);">🥶 Absolute Zero</strong> <span id="fireEmoji"></span></span>
+          <span id="statExploration" class="text-gold" style="font-weight: bold;">0 / 310</span>
+        </div>
+        <div class="progress-bar-track" id="explorationBarTrack">
+          <div class="progress-bar-fill exploration-fill" id="statExplorationBar" style="width: 0%"></div>
+        </div>
+        <div class="table-exploration-footer" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 12px; flex-wrap: wrap;">
+          <div id="tierNextInfo" style="font-size: 0.8rem; font-weight: 500; color: #a4b6d0; display: flex; align-items: center; gap: 6px;">
+            🎯 Loading exploration progress...
+          </div>
+          <button id="reviewErrorsBtn" class="btn-review-errors" type="button" style="display: none;">
+            🎯 Practice Errors (0)
+          </button>
+        </div>
       </div>
       
       <div class="blackjack-table">
@@ -140,12 +159,6 @@
             <div class="progress-bar-fill" id="statAccuracyBar" style="width: 0%"></div>
           </div>
         </div>
-        
-        <div class="stat-card">
-          <div class="stat-label">Correct Decisions</div>
-          <div class="stat-value text-ok" id="statCorrect">0</div>
-          <div class="stat-subtext" id="statTotalCorrect">Out of 0 attempts</div>
-        </div>
 
         <div class="stat-card">
           <div class="stat-label">Wrong Decisions</div>
@@ -178,14 +191,15 @@
               <tr>
                 <th>Rank</th>
                 <th>Player</th>
+                <th>Grade</th>
                 <th>Accuracy</th>
-                <th>Attempts</th>
+                <th>Explored</th>
                 <th>Errors Left</th>
               </tr>
             </thead>
             <tbody id="leaderboardBody">
               <tr>
-                <td colspan="5" class="muted table-loading">Loading leaderboard entries...</td>
+                <td colspan="6" class="muted table-loading">Loading leaderboard entries...</td>
               </tr>
             </tbody>
           </table>
@@ -244,6 +258,15 @@
     </div>
   </main>
 
-  <script src="/static/app.js"></script>
+  <!-- FULL SCREEN LEVEL UP CELEBRATION OVERLAY -->
+  <div id="celebrationOverlay" class="celebration-overlay" hidden>
+    <div class="celebration-content">
+      <div class="celebration-badge" id="celebrationBadge">🥶</div>
+      <h1 class="celebration-title">TIER UNLOCKED!</h1>
+      <p class="celebration-subtitle" id="celebrationSubtitle">Absolute Zero</p>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=10"></script>
 </body>
 </html>
