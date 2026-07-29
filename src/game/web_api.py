@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import os
+import secrets
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -71,6 +73,11 @@ class StartResponse(BaseModel):
     scenario: Optional[dict]
 
 
+class StartRequest(BaseModel):
+    password: str = Field(min_length=6, max_length=6, pattern="^[0-9]{6}$")
+    mode: str = Field(pattern="^(login|register)$", default="login")
+
+
 class AnswerRequest(BaseModel):
     scenario_key: str = Field(min_length=1, max_length=32)
     action: str = Field(min_length=1, max_length=16)
@@ -92,6 +99,7 @@ class ProgressResponse(BaseModel):
     correct_attempts: int
     incorrect_attempts: int
     remaining_errors: int
+    error_keys: List[str]
 
 
 def normalize_username(raw_username: str) -> str:
@@ -223,6 +231,14 @@ def init_db() -> None:
             )
             """
         )
+        # Ensure password_hash and password_salt columns exist (for backward compatibility and smooth deployment on Render.com)
+        cursor = connection.execute("PRAGMA table_info(user_state)")
+        columns = [row["name"] for row in cursor.fetchall()]
+        if "password_hash" not in columns:
+            connection.execute("ALTER TABLE user_state ADD COLUMN password_hash TEXT")
+        if "password_salt" not in columns:
+            connection.execute("ALTER TABLE user_state ADD COLUMN password_salt TEXT")
+
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS user_errors (
@@ -339,10 +355,116 @@ def health() -> dict:
     return {"ok": True, "scenarios": len(SCENARIOS), "db_path": str(DB_PATH.name)}
 
 
-@app.post("/api/users/{username}/start", response_model=StartResponse)
-def start_user(username: str) -> StartResponse:
-    normalized = normalize_username(username)
+@app.get("/api/leaderboard")
+def get_leaderboard() -> List[dict]:
     with open_db() as connection:
+        cursor = connection.execute(
+            """
+            SELECT 
+                username, 
+                total_attempts, 
+                correct_attempts, 
+                incorrect_attempts,
+                (correct_attempts * 100 / CASE WHEN total_attempts = 0 THEN 1 ELSE total_attempts END) AS accuracy,
+                (SELECT COUNT(*) FROM user_errors WHERE user_errors.username = user_state.username) AS remaining_errors
+            FROM user_state
+            WHERE total_attempts > 0
+            ORDER BY accuracy DESC, total_attempts DESC
+            LIMIT 10
+            """
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+@app.get("/api/strategy-map")
+def get_strategy_map() -> dict:
+    return {key: scenario.best_action for key, scenario in SCENARIOS.items()}
+
+
+class DeleteUserRequest(BaseModel):
+    admin_key: str = Field(min_length=1, max_length=128)
+    username: str = Field(min_length=1, max_length=32)
+
+
+@app.post("/api/admin/delete-user")
+def delete_user(payload: DeleteUserRequest) -> dict:
+    expected_key = os.getenv("BLACKJACK_ADMIN_KEY", "admin123")
+    if payload.admin_key != expected_key:
+        raise HTTPException(status_code=403, detail="Clé secrète admin invalide.")
+    
+    target_username = normalize_username(payload.username)
+    with open_db() as connection:
+        # Check if user exists
+        row = connection.execute(
+            "SELECT username FROM user_state WHERE username = ?", (target_username,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Utilisateur introuvable.")
+        
+        connection.execute("DELETE FROM user_state WHERE username = ?", (target_username,))
+        connection.execute("DELETE FROM user_errors WHERE username = ?", (target_username,))
+        connection.execute("DELETE FROM user_attempts WHERE username = ?", (target_username,))
+        
+    return {"ok": True, "detail": f"Utilisateur {target_username} supprimé avec succès."}
+
+
+def hash_pin(pin: str, salt: Optional[str] = None) -> tuple[str, str]:
+    if salt is None:
+        salt = secrets.token_hex(16)
+    # Standard SHA256 PBKDF2 with 100,000 iterations for secure PIN hashing
+    pwd_hash = hashlib.pbkdf2_hmac(
+        "sha256", 
+        pin.encode("utf-8"), 
+        salt.encode("utf-8"), 
+        100000
+    ).hex()
+    return pwd_hash, salt
+
+
+@app.post("/api/users/{username}/start", response_model=StartResponse)
+def start_user(username: str, payload: StartRequest) -> StartResponse:
+    normalized = normalize_username(username)
+    pin = payload.password
+    mode = payload.mode
+    
+    with open_db() as connection:
+        # Verify or register password based on mode
+        row = connection.execute(
+            "SELECT password_hash, password_salt FROM user_state WHERE username = ?",
+            (normalized,),
+        ).fetchone()
+        
+        if mode == "login":
+            if not row:
+                raise HTTPException(status_code=404, detail="Utilisateur introuvable. Veuillez créer un compte.")
+            
+            db_hash = row["password_hash"]
+            db_salt = row["password_salt"]
+            
+            if db_hash is not None and db_salt is not None:
+                # User is password protected: authenticate
+                pwd_hash, _ = hash_pin(pin, db_salt)
+                if pwd_hash != db_hash:
+                    raise HTTPException(status_code=401, detail="Code PIN incorrect pour cet utilisateur.")
+            else:
+                # Legacy user has no password yet: register this PIN as their login
+                pwd_hash, pwd_salt = hash_pin(pin)
+                connection.execute(
+                    "UPDATE user_state SET password_hash = ?, password_salt = ? WHERE username = ?",
+                    (pwd_hash, pwd_salt, normalized),
+                )
+        else:  # mode == "register"
+            if row:
+                raise HTTPException(status_code=400, detail="Ce pseudonyme est déjà pris. Veuillez en choisir un autre.")
+            
+            # New user: register with this PIN (state will be initialized by get_or_create_state below)
+            pwd_hash, pwd_salt = hash_pin(pin)
+            connection.execute(
+                "INSERT INTO user_state (username, current_index, total_attempts, correct_attempts, incorrect_attempts, password_hash, password_salt) "
+                "VALUES (?, 0, 0, 0, 0, ?, ?)",
+                (normalized, pwd_hash, pwd_salt),
+            )
+            
         state = get_or_create_state(connection, normalized)
         scenario = get_current_scenario(int(state["current_index"]))
         return StartResponse(
@@ -358,12 +480,18 @@ def get_progress(username: str) -> ProgressResponse:
     normalized = normalize_username(username)
     with open_db() as connection:
         state = get_or_create_state(connection, normalized)
+        # Fetch active error keys
+        cursor = connection.execute(
+            "SELECT scenario_key FROM user_errors WHERE username = ?", (normalized,)
+        )
+        error_keys = [row["scenario_key"] for row in cursor.fetchall()]
         return ProgressResponse(
             username=normalized,
             total_attempts=int(state["total_attempts"]),
             correct_attempts=int(state["correct_attempts"]),
             incorrect_attempts=int(state["incorrect_attempts"]),
             remaining_errors=count_errors(connection, normalized),
+            error_keys=error_keys,
         )
 
 

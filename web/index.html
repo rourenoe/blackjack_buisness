@@ -3,39 +3,245 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Blackjack Trainer</title>
+  <title>Blackjack Strategy Trainer</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+  <div class="background-decor"></div>
+  
   <main class="container">
-    <h1>Blackjack Trainer</h1>
-
-    <section class="panel">
-      <h2>User</h2>
-      <div class="row">
-        <input id="username" type="text" maxlength="32" placeholder="Your username">
-        <button id="startBtn" type="button">Start / Resume</button>
+    <header class="main-header">
+      <div class="logo-area">
+        <span class="spade-logo">♠</span>
+        <div>
+          <h1>Blackjack Business</h1>
+          <p class="subtitle">Basic Strategy Training Drill</p>
+        </div>
       </div>
-      <p id="userStatus" class="muted"></p>
-    </section>
-
-    <section class="panel" id="scenarioPanel" hidden>
-      <h2>Scenario</h2>
-      <p id="scenarioText"></p>
-      <p id="scoreText" class="muted"></p>
-      <div class="actions">
-        <button data-action="stand" type="button">Stand</button>
-        <button data-action="hit" type="button">Hit</button>
-        <button data-action="double" type="button">Double</button>
-        <button data-action="split" type="button">Split</button>
+      <div class="header-actions">
+        <button id="strategyToggleBtn" class="btn-strategy-toggle" title="Strategy Heatmap">🗺️</button>
+        <button id="adminToggleBtn" class="btn-admin-toggle" title="Admin Lounge">⚙️</button>
       </div>
-      <p id="feedback"></p>
+    </header>
+
+    <!-- USER PANEL (LOGIN / CONNECTED STATUS) -->
+    <section class="panel login-panel" id="userPanel">
+      <div class="panel-header">
+        <h2>Dealer's Lounge</h2>
+        <span class="status-indicator"></span>
+      </div>
+      <div class="panel-body">
+        <!-- Anonymous / Logged Out State -->
+        <div id="loginFormState">
+          <p class="instructions-text">
+            Enter your nickname and 6-digit PIN below. To create a brand new account, choose a unique nickname, enter your desired PIN, and click "Create Account".
+          </p>
+          <div class="row login-row">
+            <div class="input-wrapper">
+              <input id="username" type="text" maxlength="32" placeholder="Enter nickname..." autocomplete="off">
+            </div>
+            <div class="input-wrapper">
+              <input id="password" type="password" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" placeholder="6-digit PIN..." autocomplete="current-password">
+            </div>
+            <div class="login-actions-group">
+              <button id="startBtn" class="btn-primary" type="button">Log In</button>
+              <button id="registerBtn" class="btn-secondary" type="button">Create Account</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Authenticated / Logged In State -->
+        <div id="loggedInState" hidden>
+          <div class="profile-header">
+            <div class="profile-avatar">👤</div>
+            <div class="profile-details">
+              <h3>Hello, <span id="loggedInUser" class="text-gold">Player</span>! 👋</h3>
+              <p class="muted">You are logged in. Master basic strategy on the table below!</p>
+            </div>
+            <button id="logoutBtn" class="btn-logout" type="button">🚪 Log Out</button>
+          </div>
+        </div>
+        
+        <p id="userStatus" class="muted user-status-msg"></p>
+      </div>
     </section>
 
-    <section class="panel" id="progressPanel" hidden>
-      <h2>Progress</h2>
-      <p id="progressText"></p>
+    <!-- GAME SCENARIO PANEL (THE TABLE) -->
+    <section class="panel game-panel" id="scenarioPanel" hidden>
+      <div class="panel-header table-banner">
+        <h2>Live Practice Table</h2>
+        <span id="scenarioCategory" class="badge">HARD HANDS</span>
+      </div>
+      
+      <div class="blackjack-table">
+        <!-- Dealer Hand -->
+        <div class="hand-section dealer-section">
+          <div class="hand-header">
+            <h3>Dealer Upcard</h3>
+            <span id="dealerScoreVal" class="score-badge">?</span>
+          </div>
+          <div id="dealerCards" class="cards-container">
+            <!-- Rendered cards -->
+          </div>
+        </div>
+
+        <!-- Player Hand -->
+        <div class="hand-section player-section">
+          <div class="hand-header">
+            <h3>Your Hand</h3>
+            <span id="playerScoreVal" class="score-badge">0</span>
+          </div>
+          <div id="playerCards" class="cards-container">
+            <!-- Rendered cards -->
+          </div>
+        </div>
+      </div>
+
+      <div class="actions-area">
+        <h3>Choose the Best Strategy Action:</h3>
+        <div class="actions">
+          <button data-action="hit" class="btn btn-hit" type="button">
+            <span class="btn-icon">⚡</span> Hit
+          </button>
+          <button data-action="stand" class="btn btn-stand" type="button">
+            <span class="btn-icon">🛑</span> Stand
+          </button>
+          <button data-action="double" class="btn btn-double" type="button">
+            <span class="btn-icon">💰</span> Double
+          </button>
+          <button data-action="split" class="btn btn-split" type="button">
+            <span class="btn-icon">✂️</span> Split
+          </button>
+        </div>
+      </div>
+
+      <div class="feedback-wrapper">
+        <div id="feedback"></div>
+      </div>
+
+      <!-- Hidden standard elements to guarantee full compatibility with older scripts if any -->
+      <div style="display: none;">
+        <p id="scenarioText"></p>
+        <p id="scoreText"></p>
+      </div>
     </section>
+
+    <!-- PROGRESS PANEL (DASHBOARD) -->
+    <section class="panel dashboard-panel" id="progressPanel" hidden>
+      <div class="panel-header">
+        <h2>Your Progress Dashboard</h2>
+      </div>
+      
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Strategy Accuracy</div>
+          <div class="stat-value" id="statAccuracy">0%</div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="statAccuracyBar" style="width: 0%"></div>
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-label">Correct Decisions</div>
+          <div class="stat-value text-ok" id="statCorrect">0</div>
+          <div class="stat-subtext" id="statTotalCorrect">Out of 0 attempts</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-label">Wrong Decisions</div>
+          <div class="stat-value text-ko" id="statWrong">0</div>
+          <div class="stat-subtext">Opportunities to learn</div>
+        </div>
+
+        <div class="stat-card accent-card">
+          <div class="stat-label">Remaining Errors</div>
+          <div class="stat-value" id="statRemaining">0</div>
+          <div class="stat-subtext">Clear them to perfect your game</div>
+        </div>
+      </div>
+
+      <!-- Hidden standard element for compatibility -->
+      <p id="progressText" style="display: none;"></p>
+    </section>
+
+    <!-- LEADERBOARD PANEL -->
+    <section class="panel leaderboard-panel">
+      <div class="panel-header">
+        <h2>Hall of Fame</h2>
+        <button id="refreshLeaderboardBtn" class="btn-text" type="button">🔄 Refresh</button>
+      </div>
+      <div class="panel-body">
+        <p class="instructions-text">Top 10 players ranked by strategy accuracy (must have at least 1 attempt):</p>
+        <div class="table-responsive">
+          <table class="leaderboard-table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Player</th>
+                <th>Accuracy</th>
+                <th>Attempts</th>
+                <th>Errors Left</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboardBody">
+              <tr>
+                <td colspan="5" class="muted table-loading">Loading leaderboard entries...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- STRATEGY HEATMAP MODAL OVERLAY -->
+    <div id="strategyModal" class="modal-overlay" hidden>
+      <div class="modal-content panel heatmap-modal-content">
+        <div class="panel-header">
+          <h2>Strategy Heatmap</h2>
+          <button id="closeStrategyBtn" class="btn-close-modal" type="button">&times;</button>
+        </div>
+        <div class="panel-body">
+          <p class="instructions-text">
+            Visualize your personal performance. Correctly answered strategy cards are highlighted in <span class="text-ok">Green</span>, while active incorrect answers remain in <span class="text-ko">Red</span>. Master them all!
+          </p>
+          
+          <div class="heatmap-tabs">
+            <button id="tabHardBtn" class="tab-btn active-tab" type="button">Hard Totals</button>
+            <button id="tabSoftBtn" class="tab-btn" type="button">Soft Totals</button>
+            <button id="tabPairsBtn" class="tab-btn" type="button">Pairs</button>
+          </div>
+          
+          <div id="heatmapTablesContainer" class="heatmap-tables-container">
+            <p class="muted" style="text-align: center; padding: 20px;">Loading strategy table configurations...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADMIN MODAL OVERLAY -->
+    <div id="adminModal" class="modal-overlay" hidden>
+      <div class="modal-content panel">
+        <div class="panel-header">
+          <h2>Admin Lounge</h2>
+          <button id="closeAdminBtn" class="btn-close-modal" type="button">&times;</button>
+        </div>
+        <div class="panel-body">
+          <p class="instructions-text">
+            Enter the secret admin key and target nickname to delete an active session and clear all history.
+          </p>
+          <div class="row admin-row">
+            <div class="input-wrapper">
+              <input id="adminKey" type="password" placeholder="Admin Secret Key..." autocomplete="off">
+            </div>
+            <div class="input-wrapper">
+              <input id="deleteUsername" type="text" placeholder="Target nickname..." autocomplete="off">
+            </div>
+            <button id="deleteUserBtn" class="btn-danger" type="button">Delete User Session</button>
+          </div>
+          <p id="adminStatus" class="muted admin-status-msg"></p>
+        </div>
+      </div>
+    </div>
   </main>
 
   <script src="/static/app.js"></script>
